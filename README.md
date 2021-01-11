@@ -45,7 +45,7 @@ Used to keep track of all goods available, can be added or deleted as needed alo
 ![f](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/v2.JPG?raw=true)
 ![j](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/v3.JPG?raw=true)
 
-## [Ajax](https://github.com/Kartikay77/Resume/tree/main/Accounting%20System%20for%20small%20scale%20businesses/AJAX/Invoice)
+## [Ajax](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/tree/main/AJAX)
 ## [REACT](https://github.com/Kartikay77/Resume/tree/main/Accounting%20System%20for%20small%20scale%20businesses/REACT)
 
 ## Contributing
