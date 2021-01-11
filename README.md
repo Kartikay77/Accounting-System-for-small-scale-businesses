@@ -2,51 +2,51 @@
 The objective of this project is to provide views on how to improve the accounting systems of the small enterprises so that they can provide the owners/managers with appropriate financial information.
 # Modules
 
-## [Landing page](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/views/pages/index.hbs)
+## [Landing page](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/views/pages/index.hbs)
 Used to access main home page
 ### Sample output
-![r](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/landing.JPG?raw=true)
+![r](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/landing.jpg?raw=true)
 
-## [Login page](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/views/pages/login.hbs)
+## [Login page](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/views/pages/login.hbs)
 Used to access main home page
 ### Sample output
-![q](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/login.JPG?raw=true)
+![q](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/login.jpg?raw=true)
 
-## [Register page](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/views/pages/register.hbs)
+## [Register page](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/views/pages/register.hbs)
 Used to access main home page for 1st time users creating account.
 ### Sample output
-![u](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/registration.JPG?raw=true)
+![u](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/registration.jpg?raw=true)
 
-## [Company list](https://github.com/Kartikay77/Resume/tree/main/Accounting%20System%20for%20small%20scale%20businesses/views/company)
+## [Company list](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/tree/main/views/company)
 Used to create a prebuilt profile for each company that keeps track of all information so that it doesn't have to be entered on every order.
 ### Sample output
-![b](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/create%20company.JPG?raw=true)
-![a](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/company%20list.JPG?raw=true)
+![b](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/create%20company.jpg?raw=true)
+![a](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/company%20list.jpg?raw=true)
 
-## [Sales party](https://github.com/Kartikay77/Resume/tree/main/Accounting%20System%20for%20small%20scale%20businesses/views/party)
+## [Sales party](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/tree/main/views/party)
 Used to store data of individuals to whom goods sold, includes data such as name, contact, email and other financial info 
 ### Sample output
-![t](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/sales%20party.JPG?raw=true)
+![t](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/sales%20party.jpg?raw=true)
 
-## [Invoice creation](https://github.com/Kartikay77/Resume/tree/main/Accounting%20System%20for%20small%20scale%20businesses/views/invoice)
+## [Invoice creation](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/tree/main/views/invoice)
 Used for creating invoice used for filing taxes or maintaining records of all debit and credit in account.
 ### Sample output
-![c](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/invoice%20creation.JPG?raw=true)
-![o](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/invoice%20printing.JPG?raw=true)
+![c](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/invoice%20creation.jpg?raw=true)
+![o](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/invoice%20printing.jpg?raw=true)
 
-## [Inventory management](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/routes/company.js)
+## [Inventory management](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/routes/company.js)
 Used to keep track of all goods available, can be added or deleted as needed along with all pricing and taxation.
 ### Sample output
-![s](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/inventory%20management.JPG?raw=true)
+![s](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/inventory%20management.jpg?raw=true)
 
 ## Validation
 ### Sample output
-![y](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/v1.JPG?raw=true)
-![f](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/v2.JPG?raw=true)
-![j](https://github.com/Kartikay77/Resume/blob/main/Accounting%20System%20for%20small%20scale%20businesses/media/v3.JPG?raw=true)
+![y](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/v1.jpg?raw=true)
+![f](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/v2.jpg?raw=true)
+![j](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/blob/main/media/v3.jpg?raw=true)
 
 ## [Ajax](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/tree/main/AJAX)
-## [REACT](https://github.com/Kartikay77/Resume/tree/main/Accounting%20System%20for%20small%20scale%20businesses/REACT)
+## [REACT](https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses/tree/main/REACT)
 
 ## Contributing
 1. Fork the project.
