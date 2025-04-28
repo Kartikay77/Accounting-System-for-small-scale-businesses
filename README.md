@@ -57,4 +57,4 @@ Used to keep track of all goods available, can be added or deleted as needed alo
 All pull requests are welcome !
 
 ## Authors
-This project was develloped by [Kartikay Gupta](https://github.com/Kartikay77)
+This project was developed by [Kartikay Gupta](https://github.com/Kartikay77)
