@@ -14,6 +14,7 @@ const DEFAULT_ACCOUNTS = [
   ['2100', 'GST Payable', 'LIABILITY'],
   ['2200', 'GST Input Credit', 'ASSET'],
   ['3000', 'Owner Equity', 'EQUITY'],
+  ['3100', 'Retained Earnings', 'EQUITY'],
   ['4000', 'Sales Revenue', 'REVENUE'],
   ['4200', 'Inventory Adjustment Gain', 'REVENUE'],
   ['5000', 'Cost of Goods Sold', 'EXPENSE'],
@@ -48,7 +49,7 @@ async function assertOpenPeriod(companyId, date) {
 async function postJournal({ companyId, date, referenceType, referenceId, description, lines }) {
   await assertOpenPeriod(companyId, date);
   const ref = String(referenceId);
-  const existing = await JournalEntry.findOne({ companyId, referenceType, referenceId: ref, status: { $ne: 'REVERSED' } });
+  const existing = await JournalEntry.findOne({ companyId, referenceType, referenceId: ref, status: 'POSTED' });
   if (existing) return existing;
   const accounts = await ensureDefaultAccounts(companyId);
   const mapped = lines
@@ -67,9 +68,9 @@ async function postManualJournal({ companyId, date, description, debitAccountId,
   await assertOpenPeriod(companyId, date);
   const value = roundMoney(Number(amount));
   if (!(value > 0)) throw new Error('Journal amount must be positive');
+  if (String(debitAccountId) === String(creditAccountId)) throw new Error('Debit and credit accounts must be different');
   const accounts = await Account.find({ _id: { $in: [debitAccountId, creditAccountId] }, companyId, isActive: true });
   if (accounts.length !== 2) throw new Error('Both journal accounts must belong to the selected company');
-  if (String(debitAccountId) === String(creditAccountId)) throw new Error('Debit and credit accounts must be different');
   return JournalEntry.create({
     companyId,
     date,
@@ -91,7 +92,7 @@ async function postOpeningInventory({ companyId, item }) {
   if (!(quantity > 0) || !(value > 0)) return null;
   const existing = await InventoryTransaction.findOne({ companyId, itemId: item._id, type: 'OPENING_BALANCE', referenceType: 'ITEM_OPENING' });
   if (existing) return existing;
-  await postJournal({
+  const journal = await postJournal({
     companyId,
     date: item.createdAt || new Date(),
     referenceType: 'ITEM_OPENING',
@@ -102,17 +103,22 @@ async function postOpeningInventory({ companyId, item }) {
       { code: '3000', credit: value }
     ]
   });
-  return InventoryTransaction.create({
-    companyId,
-    itemId: item._id,
-    type: 'OPENING_BALANCE',
-    quantity,
-    unitCost,
-    referenceType: 'ITEM_OPENING',
-    referenceId: String(item._id),
-    notes: 'Opening inventory capitalization',
-    transactionDate: item.createdAt || new Date()
-  });
+  try {
+    return await InventoryTransaction.create({
+      companyId,
+      itemId: item._id,
+      type: 'OPENING_BALANCE',
+      quantity,
+      unitCost,
+      referenceType: 'ITEM_OPENING',
+      referenceId: String(item._id),
+      notes: 'Opening inventory capitalization',
+      transactionDate: item.createdAt || new Date()
+    });
+  } catch (error) {
+    await JournalEntry.deleteOne({ _id: journal._id });
+    throw error;
+  }
 }
 
 async function postInventoryAdjustment({ companyId, item, quantityDelta, date, notes }) {
@@ -125,8 +131,9 @@ async function postInventoryAdjustment({ companyId, item, quantityDelta, date, n
   const unitCost = Number(current.unitCost || 0);
   const value = roundMoney(Math.abs(delta) * unitCost);
   const ref = `ADJ:${item._id}:${Date.now()}`;
+  let journal = null;
   if (value > 0) {
-    await postJournal({
+    journal = await postJournal({
       companyId,
       date,
       referenceType: 'INVENTORY_ADJUSTMENT',
@@ -137,22 +144,28 @@ async function postInventoryAdjustment({ companyId, item, quantityDelta, date, n
         : [{ code: '5200', debit: value }, { code: '1300', credit: value }]
     });
   }
-  await Item.updateOne({ _id: current._id }, { $inc: { quantityOnHand: delta } });
-  return InventoryTransaction.create({
-    companyId,
-    itemId: current._id,
-    type: 'ADJUSTMENT',
-    quantity: delta,
-    unitCost,
-    referenceType: 'INVENTORY_ADJUSTMENT',
-    referenceId: ref,
-    notes,
-    transactionDate: date
-  });
+  try {
+    await Item.updateOne({ _id: current._id }, { $inc: { quantityOnHand: delta } });
+    return await InventoryTransaction.create({
+      companyId,
+      itemId: current._id,
+      type: 'ADJUSTMENT',
+      quantity: delta,
+      unitCost,
+      referenceType: 'INVENTORY_ADJUSTMENT',
+      referenceId: ref,
+      notes,
+      transactionDate: date
+    });
+  } catch (error) {
+    await Item.updateOne({ _id: current._id }, { $inc: { quantityOnHand: -delta } });
+    if (journal) await JournalEntry.deleteOne({ _id: journal._id });
+    throw error;
+  }
 }
 
 async function postSalesInvoice({ companyId, invoice, lines }) {
-  const alreadyPosted = await JournalEntry.findOne({ companyId, referenceType: 'SALES_INVOICE', referenceId: String(invoice._id), status: { $ne: 'REVERSED' } });
+  const alreadyPosted = await JournalEntry.findOne({ companyId, referenceType: 'SALES_INVOICE', referenceId: String(invoice._id), status: 'POSTED' });
   if (alreadyPosted) return alreadyPosted;
   const subtotal = roundMoney(lines.reduce((sum, line) => sum + Number(line.lineSubtotal || 0), 0));
   const tax = roundMoney(lines.reduce((sum, line) => sum + Number(line.taxAmount || 0), 0));
@@ -221,7 +234,7 @@ async function reverseSalesInvoice({ companyId, invoice }) {
   await assertOpenPeriod(companyId, new Date());
   const originalEntries = await JournalEntry.find({ companyId, referenceId: String(invoice._id), status: 'POSTED', referenceType: { $in: ['SALES_INVOICE', 'COGS'] } });
   for (const original of originalEntries) {
-    const existingReversal = await JournalEntry.findOne({ companyId, referenceType: 'REVERSAL', referenceId: String(original._id) });
+    const existingReversal = await JournalEntry.findOne({ companyId, referenceType: 'REVERSAL', referenceId: String(original._id), status: 'POSTED' });
     if (!existingReversal) {
       await JournalEntry.create({
         companyId,
@@ -238,8 +251,6 @@ async function reverseSalesInvoice({ companyId, invoice }) {
         }))
       });
     }
-    original.status = 'REVERSED';
-    await original.save();
   }
 
   const alreadyRestored = await InventoryTransaction.exists({ companyId, referenceType: 'INVOICE_VOID', referenceId: String(invoice._id) });
@@ -294,9 +305,9 @@ async function postVendorBill({ companyId, bill }) {
       { code: '2000', credit: bill.totalAmount }
     ]
   });
+  const oldQty = Number(item.quantityOnHand || 0);
+  const oldCost = Number(item.unitCost || 0);
   try {
-    const oldQty = Number(item.quantityOnHand || 0);
-    const oldCost = Number(item.unitCost || 0);
     const newQty = oldQty + quantity;
     const weightedCost = newQty > 0 ? roundMoney(((oldQty * oldCost) + (quantity * purchaseCost)) / newQty) : purchaseCost;
     item.quantityOnHand = newQty;
@@ -315,6 +326,7 @@ async function postVendorBill({ companyId, bill }) {
     });
     return journal;
   } catch (error) {
+    await Item.updateOne({ _id: item._id }, { quantityOnHand: oldQty, unitCost: oldCost });
     await JournalEntry.deleteOne({ _id: journal._id });
     throw error;
   }
@@ -383,18 +395,22 @@ async function trialBalance(companyId, from, to, options = {}) {
   const entries = await JournalEntry.find(query).lean();
   const accounts = await Account.find({ companyId, isActive: true }).sort({ code: 1 }).lean();
   const sums = new Map(accounts.map((a) => [String(a._id), { debit: 0, credit: 0 }]));
-  for (const entry of entries) for (const line of entry.lines) {
-    const bucket = sums.get(String(line.accountId)) || { debit: 0, credit: 0 };
-    bucket.debit = roundMoney(bucket.debit + Number(line.debit || 0));
-    bucket.credit = roundMoney(bucket.credit + Number(line.credit || 0));
-    sums.set(String(line.accountId), bucket);
+  for (const entry of entries) {
+    for (const line of entry.lines) {
+      const bucket = sums.get(String(line.accountId)) || { debit: 0, credit: 0 };
+      bucket.debit = roundMoney(bucket.debit + Number(line.debit || 0));
+      bucket.credit = roundMoney(bucket.credit + Number(line.credit || 0));
+      sums.set(String(line.accountId), bucket);
+    }
   }
   return accounts.map((account) => ({ ...account, ...(sums.get(String(account._id)) || { debit: 0, credit: 0 }) }));
 }
 
 async function financialStatements(companyId, from, to) {
   const tb = await trialBalance(companyId, from, to, { excludeClosing: true });
-  const balanceFor = (row) => ['ASSET', 'EXPENSE'].includes(row.type) ? roundMoney(row.debit - row.credit) : roundMoney(row.credit - row.debit);
+  const balanceFor = (row) => ['ASSET', 'EXPENSE'].includes(row.type)
+    ? roundMoney(row.debit - row.credit)
+    : roundMoney(row.credit - row.debit);
   const revenue = tb.filter((r) => r.type === 'REVENUE').map((r) => ({ ...r, balance: balanceFor(r) }));
   const expenses = tb.filter((r) => r.type === 'EXPENSE').map((r) => ({ ...r, balance: balanceFor(r) }));
   const assets = tb.filter((r) => r.type === 'ASSET').map((r) => ({ ...r, balance: balanceFor(r) }));
