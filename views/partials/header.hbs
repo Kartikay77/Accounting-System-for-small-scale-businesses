@@ -17,7 +17,9 @@
         </div>
       </details>
       {{/if}}
-      <a class="btn btn-outline" href="/logout">Logout</a>
+      <form method="post" action="/logout" class="inline-form">
+        <button class="btn btn-outline" type="submit">Logout</button>
+      </form>
     {{else}}
       <a class="btn btn-outline" href="/login">Login</a>
       <a class="btn" href="/register">Register</a>
