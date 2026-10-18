@@ -23,14 +23,23 @@ const DEFAULT_ACCOUNTS = [
 ];
 
 async function ensureDefaultAccounts(companyId) {
-  const docs = [];
-  for (const [code, name, type] of DEFAULT_ACCOUNTS) {
-    docs.push(await Account.findOneAndUpdate(
-      { companyId, code },
-      { $setOnInsert: { companyId, code, name, type, isActive: true } },
-      { upsert: true, new: true }
-    ));
+  const codes = DEFAULT_ACCOUNTS.map(([code]) => code);
+  const operations = DEFAULT_ACCOUNTS.map(([code, name, type]) => ({
+    updateOne: {
+      filter: { companyId, code },
+      update: { $setOnInsert: { companyId, code, name, type, isActive: true } },
+      upsert: true
+    }
+  }));
+
+  try {
+    await Account.bulkWrite(operations, { ordered: false });
+  } catch (error) {
+    const duplicateOnly = error?.code === 11000 || error?.writeErrors?.every((entry) => entry.code === 11000);
+    if (!duplicateOnly) throw error;
   }
+
+  const docs = await Account.find({ companyId, code: { $in: codes } });
   return Object.fromEntries(docs.map((doc) => [doc.code, doc]));
 }
 
@@ -127,7 +136,6 @@ async function postInventoryAdjustment({ companyId, item, quantityDelta, date, n
   if (!Number.isFinite(delta) || delta === 0) throw new Error('Inventory adjustment quantity cannot be zero');
   const current = await Item.findOne({ _id: item._id, companyId: String(companyId), isArchived: { $ne: true } });
   if (!current) throw new Error('Inventory item not found');
-  if (Number(current.quantityOnHand || 0) + delta < 0) throw new Error('Inventory adjustment would make stock negative');
   const unitCost = Number(current.unitCost || 0);
   const value = roundMoney(Math.abs(delta) * unitCost);
   const ref = `ADJ:${item._id}:${Date.now()}`;
@@ -145,7 +153,10 @@ async function postInventoryAdjustment({ companyId, item, quantityDelta, date, n
     });
   }
   try {
-    await Item.updateOne({ _id: current._id }, { $inc: { quantityOnHand: delta } });
+    const stockFilter = { _id: current._id, companyId: String(companyId) };
+    if (delta < 0) stockFilter.quantityOnHand = { $gte: Math.abs(delta) };
+    const stockUpdate = await Item.updateOne(stockFilter, { $inc: { quantityOnHand: delta } });
+    if (stockUpdate.modifiedCount !== 1) throw new Error('Inventory adjustment would make stock negative');
     return await InventoryTransaction.create({
       companyId,
       itemId: current._id,
@@ -158,7 +169,6 @@ async function postInventoryAdjustment({ companyId, item, quantityDelta, date, n
       transactionDate: date
     });
   } catch (error) {
-    await Item.updateOne({ _id: current._id }, { $inc: { quantityOnHand: -delta } });
     if (journal) await JournalEntry.deleteOne({ _id: journal._id });
     throw error;
   }
@@ -190,9 +200,13 @@ async function postSalesInvoice({ companyId, invoice, lines }) {
       const item = line.item;
       const quantity = Number(line.quantity || 0);
       const currentItem = await Item.findOne({ _id: item._id, companyId: String(companyId), isArchived: { $ne: true } });
-      const unitCost = Number(currentItem?.unitCost || 0);
-      if (!currentItem || Number(currentItem.quantityOnHand || 0) < quantity) throw new Error(`Insufficient stock for ${item.newModelName}`);
-      await Item.updateOne({ _id: item._id, companyId: String(companyId) }, { $inc: { quantityOnHand: -quantity } });
+      if (!currentItem) throw new Error(`Item not found: ${item.newModelName}`);
+      const unitCost = Number(currentItem.unitCost || 0);
+      const stockUpdate = await Item.updateOne(
+        { _id: item._id, companyId: String(companyId), isArchived: { $ne: true }, quantityOnHand: { $gte: quantity } },
+        { $inc: { quantityOnHand: -quantity } }
+      );
+      if (stockUpdate.modifiedCount !== 1) throw new Error(`Insufficient stock for ${item.newModelName}`);
       const tx = await InventoryTransaction.create({
         companyId,
         itemId: item._id,
