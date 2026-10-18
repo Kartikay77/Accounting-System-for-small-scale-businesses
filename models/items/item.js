@@ -16,7 +16,10 @@ const ItemSchema = new mongoose.Schema({
   isArchived: { type: Boolean, default: false, index: true }
 }, { timestamps: true });
 
-ItemSchema.index({ companyId: 1, newModelName: 1 }, { unique: true });
+ItemSchema.index(
+  { companyId: 1, newModelName: 1 },
+  { unique: true, partialFilterExpression: { isArchived: false } }
+);
 
 ItemSchema.statics.findByCompanyId = function findByCompanyId(companyId) {
   return this.find({ companyId: String(companyId), isArchived: { $ne: true } }).sort({ newModelName: 1 });
