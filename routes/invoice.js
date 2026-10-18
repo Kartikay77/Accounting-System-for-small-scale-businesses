@@ -18,11 +18,11 @@ function serialsForRow(body, row) {
   const legacyExpression = new RegExp(`^serial_${row}_`);
   const legacy = Object.entries(body)
     .filter(([key]) => legacyExpression.test(key))
-    .map(([, value]) => String(value || '').trim())
+    .map(([, value]) => String(value || '').trim().toUpperCase())
     .filter(Boolean);
   const compact = String(body[`serials_${row}`] || '')
     .split(/[\n,]+/)
-    .map((value) => value.trim())
+    .map((value) => value.trim().toUpperCase())
     .filter(Boolean);
   return [...new Set([...legacy, ...compact])];
 }
@@ -61,7 +61,11 @@ router.post('/new', sameOriginOnly, async (req, res, next) => {
       if (!item) throw new Error(`Item not found: ${itemName}`);
       const calculated = calculateLine({ quantity: req.body[`quantity_${row}`], ratePer: req.body[`rate_per_${row}`], taxRate: item.tax });
       if (Number(item.quantityOnHand || 0) < calculated.quantity) throw new Error(`Insufficient stock for ${item.newModelName}`);
-      lines.push({ row, item, serials: serialsForRow(req.body, row), ...calculated });
+      const serials = serialsForRow(req.body, row);
+      if (serials.length && (!Number.isInteger(calculated.quantity) || serials.length !== calculated.quantity)) {
+        throw new Error(`Serial number count must match quantity for ${item.newModelName}`);
+      }
+      lines.push({ row, item, serials, ...calculated });
     }
     if (!lines.length) return res.status(400).send('Add at least one invoice line');
 
@@ -84,7 +88,12 @@ router.post('/new', sameOriginOnly, async (req, res, next) => {
         taxAmount: line.taxAmount, lineTotal: line.lineTotal
       });
       if (line.serials.length) {
-        await SerialNumber.insertMany(line.serials.map((serialNumber) => ({ invoiceItemId: invoiceItem._id.toString(), serialNumber })));
+        await SerialNumber.insertMany(line.serials.map((serialNumber) => ({
+          companyId: String(req.session.companyId),
+          itemId: line.item._id.toString(),
+          invoiceItemId: invoiceItem._id.toString(),
+          serialNumber
+        })));
       }
     }
 
@@ -171,13 +180,13 @@ router.get('/print/:id', async (req, res, next) => {
       ]);
       if (!item) continue;
       const fallback = calculateLine({ quantity: invoiceItem.quantity, ratePer: invoiceItem.ratePer, taxRate: item.tax });
-      const lineSubtotal = invoiceItem.lineSubtotal || fallback.lineSubtotal;
-      const taxAmount = invoiceItem.taxAmount || fallback.taxAmount;
+      const lineSubtotal = invoiceItem.lineSubtotal ?? fallback.lineSubtotal;
+      const taxAmount = invoiceItem.taxAmount ?? fallback.taxAmount;
       subtotal = roundMoney(subtotal + lineSubtotal);
       taxTotal = roundMoney(taxTotal + taxAmount);
       rows.push({
         name: item.newModelName, hsn: item.hsn, quantity: invoiceItem.quantity,
-        ratePer: Number(invoiceItem.ratePer).toFixed(2), taxRate: invoiceItem.taxRate || item.tax,
+        ratePer: Number(invoiceItem.ratePer).toFixed(2), taxRate: invoiceItem.taxRate ?? item.tax,
         subtotal: Number(lineSubtotal).toFixed(2), taxAmount: Number(taxAmount).toFixed(2),
         total: Number(lineSubtotal + taxAmount).toFixed(2),
         serials: serialDocs.map((doc) => doc.serialNumber).join(', ')
