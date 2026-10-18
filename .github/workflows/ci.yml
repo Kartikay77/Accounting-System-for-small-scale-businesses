@@ -31,13 +31,10 @@ jobs:
       - name: Install backend dependencies
         run: npm install
       - name: Build React salary module
-        run: |
-          cd REACT
-          npm install
-          npm run build
+        run: npm run build:react
       - run: npm test
       - run: npm run lint
-      - name: Smoke-test real application startup
+      - name: Smoke-test real application startup and React bundle
         shell: bash
         run: |
           NODE_ENV=development COOKIE_SECURE=false npm start > /tmp/accounting-app.log 2>&1 &
@@ -45,7 +42,9 @@ jobs:
           trap 'kill $APP_PID 2>/dev/null || true' EXIT
           for i in {1..30}; do
             if curl --fail --silent http://127.0.0.1:3000/health | grep -q '"status":"ok"'; then
-              exit 0
+              if curl --fail --silent http://127.0.0.1:3000/react-salary/ | grep -q 'React Salary Management'; then
+                exit 0
+              fi
             fi
             sleep 1
           done
