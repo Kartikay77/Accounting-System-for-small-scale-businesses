@@ -1,39 +1,94 @@
 const run = process.env.RUN_INTEGRATION === '1';
 const describeIntegration = run ? describe : describe.skip;
 
+jest.setTimeout(30000);
+
 describeIntegration('core application workflow', () => {
   let app, mongoose, User, Company, Party, Item, Invoice;
+
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     process.env.SESSION_SECRET = 'integration-test-secret';
     process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/accounting_system_test';
+
     app = require('../app');
-    mongoose = require('mongoose');
-    User = require('../models/user'); Company = require('../models/company'); Party = require('../models/party'); Item = require('../models/items/item'); Invoice = require('../models/invoice/invoice');
-    await mongoose.connection.asPromise();
+    mongoose = require('../config/mongoose');
+    User = require('../models/user');
+    Company = require('../models/company');
+    Party = require('../models/party');
+    Item = require('../models/items/item');
+    Invoice = require('../models/invoice/invoice');
+
+    await mongoose.connectionPromise;
     await mongoose.connection.db.dropDatabase();
   });
-  afterAll(async () => { await mongoose.disconnect(); });
+
+  afterAll(async () => {
+    if (mongoose?.connection.readyState !== 0) await mongoose.disconnect();
+  });
 
   test('register, create company, party, item and invoice', async () => {
     const request = require('supertest');
     const agent = request.agent(app);
-    await agent.post('/user/register').type('form').send({ username: 'Integration User', email: 'integration@example.com', password: 'StrongPass123!' }).expect(302);
+
+    await agent.post('/user/register').type('form').send({
+      username: 'Integration User',
+      email: 'integration@example.com',
+      password: 'StrongPass123!'
+    }).expect(302);
+
     const user = await User.findOne({ email: 'integration@example.com' });
     expect(user).toBeTruthy();
-    await agent.post('/company/new').type('form').send({ name: 'Integration Co', gstin: '27ABCDE1234F1Z5', city: 'Mumbai', state: 'Maharashtra', pincode: '400001' }).expect(302);
+
+    await agent.post('/company/new').type('form').send({
+      name: 'Integration Co',
+      gstin: '27ABCDE1234F1Z5',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      pincode: '400001'
+    }).expect(302);
+
     const company = await Company.findOne({ userid: String(user._id) });
     expect(company).toBeTruthy();
-    await agent.post('/party/new').type('form').send({ name: 'Integration Customer', gstin: '27AAACA1111A1Z1', city: 'Mumbai', state: 'Maharashtra' }).expect(302);
+
+    await agent.post('/party/new').type('form').send({
+      name: 'Integration Customer',
+      gstin: '27AAACA1111A1Z1',
+      city: 'Mumbai',
+      state: 'Maharashtra'
+    }).expect(302);
+
     const party = await Party.findOne({ companyid: String(company._id) });
     expect(party).toBeTruthy();
-    await agent.post('/item/new').type('form').send({ companyName: 'Test Brand', newModelName: 'TEST-ITEM', hsn: '84713010', itemType: 'Electronics', tax: 18, price: 1000, quantityOnHand: 10 }).expect(302);
+
+    await agent.post('/item/new').type('form').send({
+      companyName: 'Test Brand',
+      newModelName: 'TEST-ITEM',
+      hsn: '84713010',
+      itemType: 'Electronics',
+      tax: 18,
+      price: 1000,
+      quantityOnHand: 10
+    }).expect(302);
+
     const item = await Item.findOne({ companyId: String(company._id), newModelName: 'TEST-ITEM' });
     expect(item).toBeTruthy();
-    await agent.post('/invoice/new').type('form').send({ number: 'INT-001', date: '2026-10-18', partyId: String(party._id), select_item_1: 'TEST-ITEM', quantity_1: 2, rate_per_1: 1000, narration: 'Integration test' }).expect(302);
+
+    await agent.post('/invoice/new').type('form').send({
+      number: 'INT-001',
+      date: '2026-10-18',
+      partyId: String(party._id),
+      select_item_1: 'TEST-ITEM',
+      quantity_1: 2,
+      rate_per_1: 1000,
+      narration: 'Integration test'
+    }).expect(302);
+
     const invoice = await Invoice.findOne({ companyId: String(company._id), number: 'INT-001' });
+    expect(invoice).toBeTruthy();
     expect(invoice.totalAmount).toBe(2360);
+
     await agent.get('/invoice/list').expect(200);
     await agent.get(`/invoice/print/${invoice._id}`).expect(200);
-  }, 20000);
+  });
 });

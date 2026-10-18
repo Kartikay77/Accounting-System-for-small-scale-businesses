@@ -1,0 +1,20 @@
+name: Extract project report spec
+
+on:
+  push:
+    branches: ['chatgpt/fully-runnable-demo']
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PDF tools
+        run: sudo apt-get update -qq && sudo apt-get install -y poppler-utils
+      - name: Extract report text
+        run: pdftotext -layout 18BCE2199_IWP_PROJECT.pdf project-report-spec.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: project-report-spec
+          path: project-report-spec.txt
+          retention-days: 1
