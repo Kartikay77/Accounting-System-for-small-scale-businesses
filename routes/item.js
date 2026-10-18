@@ -5,6 +5,7 @@ const ItemType = require('../models/items/itemType');
 const auth = require('../middleware/auth');
 const { sameOriginOnly } = require('../middleware/security');
 const { postOpeningInventory } = require('../services/accounting');
+const { roundMoney } = require('../utils/money');
 
 const router = express.Router();
 router.use(auth.isAuthorized, auth.requireCompany);
@@ -20,7 +21,10 @@ function normalize(body, fields) {
 
 router.get('/list', async (req, res, next) => {
   try {
-    const items = await Item.findByCompanyId(req.session.companyId).lean();
+    const items = (await Item.findByCompanyId(req.session.companyId).lean()).map((entry) => ({
+      ...entry,
+      inventoryValue: roundMoney(Number(entry.quantityOnHand || 0) * Number(entry.unitCost || 0)).toFixed(2)
+    }));
     return res.render('item/list', { title: 'Items', item_page: true, items });
   } catch (error) { return next(error); }
 });
