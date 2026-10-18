@@ -1,95 +1,75 @@
-const createError = require('http-errors');
+require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
-// const cookieParser = require('cookie-parser');
-const hbs = require('hbs')
+const hbs = require('hbs');
+const helmet = require('helmet');
 const session = require('express-session');
-const MongoStore = require('connect-mongo')(session);
-const mongoose = require('mongoose');
-require('./config/mongoose')
+const MongoStore = require('connect-mongo');
+const { rateLimit } = require('express-rate-limit');
+require('./config/mongoose');
 
-const db = mongoose.connection;
-db.on('error', console.error.bind(console, 'connection error:'));
-db.once('open', function () {
-  console.log("> db connected");
-});
-
-// express, structure define
-const app = express();
-
-//use sessions for tracking logins
-app.use(session({
-  secret: 'work hard',
-  resave: true,
-  saveUninitialized: false,
-  store: new MongoStore({
-    mongooseConnection: db
-  })
-}));
-
-
-// Define paths for Express config
-const publicDirectoryPath = path.join(__dirname, './public')
-const viewsPath = path.join(__dirname, './views/')
-const partialsPath = path.join(__dirname, './views/partials/')
-
-// routes
-const company = require('./routes/company')
+const company = require('./routes/company');
 const mainRouter = require('./routes/index');
 const invoice = require('./routes/invoice');
 const item = require('./routes/item');
 const party = require('./routes/party');
 const user = require('./routes/user');
+const { notFound, errorHandler } = require('./middleware/errorHandler');
 
-// // parse incoming requests
-// app.use(bodyParser.json());
-// app.use(bodyParser.urlencoded({ extended: false }));
+const app = express();
+const mongoUrl = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/accounting_system';
+const sessionSecret = process.env.SESSION_SECRET || 'development-only-change-me';
 
-// view engine setup
+if (process.env.NODE_ENV === 'production' && sessionSecret === 'development-only-change-me') {
+  throw new Error('SESSION_SECRET must be configured in production');
+}
+
+app.set('trust proxy', 1);
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+app.use(session({
+  name: 'accounting.sid',
+  secret: sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  store: MongoStore.create({ mongoUrl, ttl: 60 * 60 * 8 }),
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 1000 * 60 * 60 * 8
+  }
+}));
+
+const publicDirectoryPath = path.join(__dirname, 'public');
+const viewsPath = path.join(__dirname, 'views');
+const partialsPath = path.join(__dirname, 'views', 'partials');
 
 app.set('views', viewsPath);
 app.set('view engine', 'hbs');
-hbs.registerPartials(partialsPath)
+hbs.registerPartials(partialsPath);
+app.use(express.static(publicDirectoryPath));
 
-// setup static directory to serve
-app.use(express.static(publicDirectoryPath))
-app.use('/company', express.static(publicDirectoryPath))
-app.use('/invoice', express.static(publicDirectoryPath))
-app.use('/invoice/new', express.static(publicDirectoryPath))
-app.use('/invoice/print', express.static(publicDirectoryPath))
-app.use('/item', express.static(publicDirectoryPath))
-app.use('/party', express.static(publicDirectoryPath))
-app.use('/user', express.static(publicDirectoryPath))
-app.use('/company/edit', express.static(publicDirectoryPath))
-app.use('/company/delete', express.static(publicDirectoryPath))
-app.use('/party/edit', express.static(publicDirectoryPath))
-app.use('/party/delete', express.static(publicDirectoryPath))
-app.use('/item/edit', express.static(publicDirectoryPath))
-app.use('/item/delete', express.static(publicDirectoryPath))
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false
+});
 
-app.use(express.json());
-app.use(express.urlencoded({
-    extended: true
-}));
-// app.use(cookieParser());
-
-// routes
 app.use('/company', company);
-app.use('/', mainRouter);
 app.use('/invoice', invoice);
 app.use('/item', item);
 app.use('/party', party);
-app.use('/user', user);
+app.use('/user', authLimiter, user);
+app.use('/', mainRouter);
 
-// catch 404 and forward to error handler
-// app.use(function (req, res, next) {
-//      next(createError(404));
-// });
-
-// error handler
-// app.use(function (err, req, res, next) {
-//      res.status(err.status || 500);
-//      res.send(err.message);
-// });
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.use(notFound);
+app.use(errorHandler);
 
 module.exports = app;
