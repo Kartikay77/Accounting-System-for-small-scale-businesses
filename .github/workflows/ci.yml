@@ -32,6 +32,14 @@ jobs:
         run: npm install
       - name: Build React salary module
         run: npm run build:react
+      - name: Capture dependency lockfiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-lockfiles
+          path: |
+            package-lock.json
+            REACT/package-lock.json
+          retention-days: 3
       - name: Run tests
         shell: bash
         run: |
