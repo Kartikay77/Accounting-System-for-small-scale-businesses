@@ -140,6 +140,9 @@ router.post('/delete/:id', sameOriginOnly, async (req, res, next) => {
   try {
     const invoice = await Invoice.findOne({ _id: req.params.id, companyId: String(req.session.companyId), isArchived: { $ne: true } });
     if (!invoice) return res.status(404).send('Invoice not found');
+    if (Number(invoice.amountPaid || 0) > 0) {
+      return res.status(409).send('This invoice has customer receipts. Reverse those receipts before voiding the invoice.');
+    }
     await reverseSalesInvoice({ companyId: req.company._id, invoice });
     invoice.status = 'VOID';
     invoice.isArchived = true;
