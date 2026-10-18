@@ -97,7 +97,14 @@ describeIntegration('core application and accounting workflow', () => {
     expect(item.quantityOnHand).toBe(7);
     expect(await JournalEntry.countDocuments({ referenceType: 'INVENTORY_ADJUSTMENT' })).toBe(1);
 
-    await agent.post('/accounting/journals/new').type('form').send({ date: '2026-10-18', description: 'Owner bank contribution', debitAccountId: receiptJournal.lines[0].accountId, creditAccountId: (await JournalEntry.findOne({ referenceType: 'ITEM_OPENING' })).lines[1].accountId, amount: 100 }).expect(302);
+    const openingJournal = await JournalEntry.findOne({ referenceType: 'ITEM_OPENING' });
+    await agent.post('/accounting/journals/new').type('form').send({
+      date: '2026-10-18',
+      description: 'Owner bank contribution',
+      debitAccountId: String(receiptJournal.lines[0].accountId),
+      creditAccountId: String(openingJournal.lines[1].accountId),
+      amount: 100
+    }).expect(302);
     expect(await JournalEntry.countDocuments({ referenceType: 'MANUAL' })).toBe(1);
 
     await agent.post('/accounting/bank-reconciliation/new').type('form').send({ date: '2026-10-18', description: 'Customer deposit', reference: 'STMT-1', amount: 2360 }).expect(302);
@@ -137,6 +144,12 @@ describeIntegration('core application and accounting workflow', () => {
     expect(await AccountingPeriod.countDocuments({ status: 'CLOSED' })).toBe(1);
     expect(await JournalEntry.countDocuments({ referenceType: 'PERIOD_CLOSE' })).toBe(1);
 
-    await agent.post('/accounting/journals/new').type('form').send({ date: '2026-10-18', description: 'Should be blocked', debitAccountId: receiptJournal.lines[0].accountId, creditAccountId: (await JournalEntry.findOne({ referenceType: 'ITEM_OPENING' })).lines[1].accountId, amount: 1 }).expect(409);
+    await agent.post('/accounting/journals/new').type('form').send({
+      date: '2026-10-18',
+      description: 'Should be blocked',
+      debitAccountId: String(receiptJournal.lines[0].accountId),
+      creditAccountId: String(openingJournal.lines[1].accountId),
+      amount: 1
+    }).expect(409);
   });
 });
