@@ -1,149 +1,121 @@
-# Small Business Accounting System
+# Easy Accounting — Small Business Accounting System
 
-A full-stack Node.js application for small-business company management, customers/parties, item masters, GST-aware invoicing, serial-number tracking and invoice printing. The repository began as an academic Internet & Web Programming project and is now being modernized into a safer, testable accounting/ERP foundation.
+A runnable full-stack demonstration of company-scoped invoicing and small-business master-data management using **Node.js, Express, Handlebars and MongoDB**.
 
-## Current stack
+## What works
 
-- Node.js 20+
-- Express 5
-- MongoDB + Mongoose
-- Handlebars (`hbs`)
-- Session authentication backed by MongoDB
-- Jest for unit tests
-- ESLint + Prettier
-- Docker / Docker Compose
-- GitHub Actions CI
+- User registration and login with bcrypt password hashing
+- Server-side sessions stored in MongoDB outside test mode
+- Multiple companies per user with active-company switching
+- Company create/edit/archive
+- Party/customer create/edit/archive
+- Item master create/edit/archive, GST rate, price and quantity-on-hand fields
+- Invoice creation with multiple line items
+- Server-authoritative subtotal, GST and grand-total calculation
+- Company-scoped invoice access and unique invoice numbers per company
+- Invoice list, voiding and printable invoice view
+- Dashboard counts
+- Dockerized MongoDB and app startup
+- Idempotent demo-data seed
+- Unit tests plus a Mongo-backed integration workflow in CI
+- Self-contained runtime CSS/JavaScript; the app does not depend on the removed Bootstrap/DataTables asset bundle
 
-## Implemented application features
+> The repository also contains historical `AJAX/` and `REACT/` coursework examples. They are preserved for project history but are not required by the main Express application.
 
-- User registration, login and logout
-- Multi-company records per user
-- Company-scoped access controls
-- Customer / sales-party master data
-- Item master data, HSN, GST rate, price, stock/reorder fields
-- Invoice creation with **server-side subtotal and tax calculation**
-- Company-scoped invoice numbers
-- GST/IGST-aware invoice printing
-- Serial-number records on invoice lines
-- Soft deletion / voiding for business records instead of destructive GET requests
-- Health endpoint at `GET /health`
+## Fastest way to run
 
-## Accounting-domain foundation
-
-The modernization also introduces schemas for functionality that can be expanded without redesigning the database again:
-
-- Chart of Accounts (`Account`)
-- Balanced journal entries (`JournalEntry`)
-- Payments and invoice allocations (`Payment`)
-- Inventory movement ledger (`InventoryTransaction`)
-- Company memberships and roles (`CompanyMembership`)
-- Audit history (`AuditLog`)
-
-> The current UI does not yet expose every accounting-domain model. They are the foundation for the next product layer: posting invoices/payments to the ledger, A/R aging, inventory valuation, trial balance, P&L and balance sheet.
-
-## Security improvements
-
-The current backend includes:
-
-- Password hashing with bcrypt
-- No plaintext password logging
-- Session regeneration at login
-- Mongo-backed sessions with HTTP-only/SameSite cookies
-- Environment-based session secret and MongoDB connection
-- Helmet security headers
-- Authentication rate limiting
-- Same-origin protection on state-changing HTML form requests
-- Authorization checks that scope companies, customers, items and invoices to the logged-in account/company
-- Soft-delete/archive behavior for master data and invoices
-- Centralized 404 and error handling
-
-## Local setup
-
-1. Install Node.js 20+ and MongoDB, or use Docker.
-2. Copy the environment template:
+Prerequisite: Docker Desktop / Docker Engine with Compose.
 
 ```bash
-cp .env.example .env
-```
-
-3. Change `SESSION_SECRET` to a long random value.
-4. Install dependencies:
-
-```bash
-npm install
-```
-
-5. Start the application:
-
-```bash
-npm run dev
-```
-
-6. Open `http://localhost:3000`.
-
-### Docker
-
-```bash
+git clone https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses.git
+cd Accounting-System-for-small-scale-businesses
 docker compose up --build
 ```
 
+Open **http://localhost:3000**.
+
+The Compose startup waits for MongoDB, seeds demonstration data, then starts the web server.
+
+### Demo account
+
+- Email: `demo@easyaccounting.local`
+- Password: `DemoPass123!`
+
+You can also register a new account from the UI.
+
+## Run without Docker
+
+1. Install Node.js 20+ and MongoDB.
+2. Copy `.env.example` to `.env`.
+3. Run:
+
+```bash
+npm install
+npm run seed
+npm start
+```
+
+Default local MongoDB URI: `mongodb://127.0.0.1:27017/accounting_system`.
+
 ## Environment variables
 
-| Variable | Purpose | Example |
-| --- | --- | --- |
-| `NODE_ENV` | Runtime environment | `development` |
-| `PORT` | HTTP port | `3000` |
-| `MONGODB_URI` | MongoDB connection string | `mongodb://127.0.0.1:27017/accounting_system` |
-| `SESSION_SECRET` | Session signing secret | Use a long random value |
+```dotenv
+NODE_ENV=development
+PORT=3000
+MONGODB_URI=mongodb://127.0.0.1:27017/accounting_system
+SESSION_SECRET=replace-with-a-long-random-secret
+COOKIE_SECURE=false
+```
 
-## Quality checks
+Use `COOKIE_SECURE=true` only behind HTTPS in production.
+
+## Validation
 
 ```bash
 npm test
 npm run lint
 ```
 
-CI runs the same checks on pushes and pull requests.
+CI additionally launches MongoDB and exercises the real authenticated workflow: register → company → party → item → invoice → list → print.
 
-## Project structure
+## Main structure
 
 ```text
-config/                 MongoDB configuration
-middleware/             Authentication, security and error handling
-models/                 Application and accounting-domain models
-routes/                 Express route handlers
-test/                   Unit tests
-utils/                  Money, GST and number-formatting utilities
-views/                   Handlebars UI
-public/                  Static assets
-AJAX/                    Preserved historical coursework/demo
-REACT/                   Preserved historical React coursework/demo
+app.js
+bin/www
+config/
+middleware/
+models/
+routes/
+scripts/seed.js
+public/
+  css/app.css
+  js/app.js
+  js/invoice-form.js
+views/
+test/
+Dockerfile
+docker-compose.yml
 ```
 
-## Important accounting behavior
+## Accounting scope
 
-Invoice totals are recalculated on the server from quantity, rate and the stored item tax rate. The browser-provided total is not trusted. Invoice numbers are unique inside each company, and invoice/customer/item lookups are company-scoped.
+This repository is now a **functional invoicing application and accounting-domain foundation**, not a finished commercial ERP. Domain models for accounts, journal entries, payments, inventory transactions, company memberships and audit logs are present, but automatic double-entry posting, bank reconciliation, accounts payable, Trial Balance, P&L and Balance Sheet are future modules.
 
-The `JournalEntry` schema enforces the core double-entry invariant that total debits equal total credits. Automatic ledger posting is intentionally not claimed as complete until account mapping and posting rules are wired into the invoice/payment flows.
+That distinction is intentional: the implemented workflows are runnable and tested, while roadmap functionality is not presented as completed.
 
-## Roadmap
+## Security basics
 
-- Post sales invoices and payments automatically into the general ledger
-- Add accounts receivable and payment allocation screens
-- Add inventory movement posting and valuation
-- Add credit/debit notes and returns
-- Add GST tax summaries and period reports
-- Add Trial Balance, Profit & Loss and Balance Sheet
-- Add role-based UI permissions using `CompanyMembership`
-- Add immutable audit entries for financial changes
-- Add integration tests with an isolated MongoDB database
+- bcrypt password hashing
+- no plaintext password logging
+- environment-based secrets
+- HTTP-only session cookie
+- optional secure cookie for HTTPS deployments
+- rate limiting on authentication routes
+- user/company ownership checks
+- soft archive/void behavior for business records
+- same-origin protection for state-changing browser requests
 
-## Historical project report
+## Historical screenshots
 
-The original academic report and screenshots remain in the repository for provenance and comparison with the modernized application.
-
-## Author
-
-**Kartikay Gupta**
-
-GitHub: `Kartikay77`
+Original project screenshots remain under `media/` and are displayed on the landing page. The original academic report is retained as `18BCE2199_IWP_PROJECT.pdf`.

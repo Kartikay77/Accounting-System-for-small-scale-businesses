@@ -6,17 +6,25 @@ services:
       - '27017:27017'
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand({ ping: 1 }).ok']
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   app:
     build: .
     restart: unless-stopped
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       PORT: 3000
       MONGODB_URI: mongodb://mongo:27017/accounting_system
-      SESSION_SECRET: local-docker-change-this-before-real-deployment
+      SESSION_SECRET: local-docker-demo-secret-change-for-deployment
+      COOKIE_SECURE: 'false'
+    command: sh -c "node scripts/seed.js && npm start"
     ports:
       - '3000:3000'
 

@@ -1,0 +1,6 @@
+{{> static}}{{> header}}{{> sidebar}}
+<main class="page-content"><div class="page-heading"><div><span class="eyebrow">Overview</span><h1>Dashboard</h1><p class="muted">{{#if companyName}}Current company: {{companyName}}{{else}}Create or select a company to start using operational modules.{{/if}}</p></div></div>
+{{#if needsCompany}}<div class="notice">No company is selected. <a href="/company/new">Create your first company</a> or choose one from the header.</div>{{/if}}
+<section class="metric-grid"><article class="metric"><span>Companies</span><strong>{{totalCompanies}}</strong></article><article class="metric"><span>Parties</span><strong>{{totalParties}}</strong></article><article class="metric"><span>Items</span><strong>{{totalItems}}</strong></article><article class="metric"><span>Invoices</span><strong>{{totalInvoices}}</strong></article></section>
+<section class="panel"><h2>Quick actions</h2><div class="actions"><a class="btn" href="/invoice/new">Create invoice</a><a class="btn btn-outline" href="/party/new">Add party</a><a class="btn btn-outline" href="/item/new">Add item</a></div></section></main>
+{{> footer}}

@@ -6,9 +6,11 @@ const hbs = require('hbs');
 const helmet = require('helmet');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
+const mongoose = require('mongoose');
 const { rateLimit } = require('express-rate-limit');
 require('./config/mongoose');
 
+const Company = require('./models/company');
 const company = require('./routes/company');
 const mainRouter = require('./routes/index');
 const invoice = require('./routes/invoice');
@@ -30,20 +32,24 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-app.use(session({
+const sessionOptions = {
   name: 'accounting.sid',
   secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   rolling: true,
-  store: MongoStore.create({ mongoUrl, ttl: 60 * 60 * 8 }),
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.COOKIE_SECURE === 'true',
     sameSite: 'lax',
     maxAge: 1000 * 60 * 60 * 8
   }
-}));
+};
+
+if (process.env.NODE_ENV !== 'test') {
+  sessionOptions.store = MongoStore.create({ mongoUrl, ttl: 60 * 60 * 8 });
+}
+app.use(session(sessionOptions));
 
 const publicDirectoryPath = path.join(__dirname, 'public');
 const viewsPath = path.join(__dirname, 'views');
@@ -53,6 +59,21 @@ app.set('views', viewsPath);
 app.set('view engine', 'hbs');
 hbs.registerPartials(partialsPath);
 app.use(express.static(publicDirectoryPath));
+app.use('/media', express.static(path.join(__dirname, 'media')));
+
+app.use(async (req, res, next) => {
+  try {
+    res.locals.userName = req.session?.username || '';
+    res.locals.companyName = req.session?.companyName || '';
+    res.locals.currentCompanyId = req.session?.companyId || '';
+    res.locals.availableCompanies = req.session?.userId
+      ? await Company.findByUserId(req.session.userId).lean()
+      : [];
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+});
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -68,7 +89,14 @@ app.use('/party', party);
 app.use('/user', authLimiter, user);
 app.use('/', mainRouter);
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', (req, res) => {
+  const databaseConnected = mongoose.connection.readyState === 1;
+  return res.status(databaseConnected ? 200 : 503).json({
+    status: databaseConnected ? 'ok' : 'degraded',
+    database: databaseConnected ? 'connected' : 'disconnected'
+  });
+});
+
 app.use(notFound);
 app.use(errorHandler);
 
