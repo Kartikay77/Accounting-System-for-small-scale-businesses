@@ -15,8 +15,10 @@ const DEFAULT_ACCOUNTS = [
   ['2200', 'GST Input Credit', 'ASSET'],
   ['3000', 'Owner Equity', 'EQUITY'],
   ['4000', 'Sales Revenue', 'REVENUE'],
+  ['4200', 'Inventory Adjustment Gain', 'REVENUE'],
   ['5000', 'Cost of Goods Sold', 'EXPENSE'],
-  ['5100', 'Operating Expense', 'EXPENSE']
+  ['5100', 'Operating Expense', 'EXPENSE'],
+  ['5200', 'Inventory Shrinkage', 'EXPENSE']
 ];
 
 async function ensureDefaultAccounts(companyId) {
@@ -61,6 +63,27 @@ async function postJournal({ companyId, date, referenceType, referenceId, descri
   return JournalEntry.create({ companyId, date, referenceType, referenceId: ref, description, status: 'POSTED', lines: mapped });
 }
 
+async function postManualJournal({ companyId, date, description, debitAccountId, creditAccountId, amount }) {
+  await assertOpenPeriod(companyId, date);
+  const value = roundMoney(Number(amount));
+  if (!(value > 0)) throw new Error('Journal amount must be positive');
+  const accounts = await Account.find({ _id: { $in: [debitAccountId, creditAccountId] }, companyId, isActive: true });
+  if (accounts.length !== 2) throw new Error('Both journal accounts must belong to the selected company');
+  if (String(debitAccountId) === String(creditAccountId)) throw new Error('Debit and credit accounts must be different');
+  return JournalEntry.create({
+    companyId,
+    date,
+    referenceType: 'MANUAL',
+    referenceId: `MANUAL:${Date.now()}`,
+    description,
+    status: 'POSTED',
+    lines: [
+      { accountId: debitAccountId, description, debit: value, credit: 0 },
+      { accountId: creditAccountId, description, debit: 0, credit: value }
+    ]
+  });
+}
+
 async function postOpeningInventory({ companyId, item }) {
   const quantity = Number(item.quantityOnHand || 0);
   const unitCost = Number(item.unitCost || 0);
@@ -92,10 +115,45 @@ async function postOpeningInventory({ companyId, item }) {
   });
 }
 
+async function postInventoryAdjustment({ companyId, item, quantityDelta, date, notes }) {
+  await assertOpenPeriod(companyId, date);
+  const delta = Number(quantityDelta);
+  if (!Number.isFinite(delta) || delta === 0) throw new Error('Inventory adjustment quantity cannot be zero');
+  const current = await Item.findOne({ _id: item._id, companyId: String(companyId), isArchived: { $ne: true } });
+  if (!current) throw new Error('Inventory item not found');
+  if (Number(current.quantityOnHand || 0) + delta < 0) throw new Error('Inventory adjustment would make stock negative');
+  const unitCost = Number(current.unitCost || 0);
+  const value = roundMoney(Math.abs(delta) * unitCost);
+  const ref = `ADJ:${item._id}:${Date.now()}`;
+  if (value > 0) {
+    await postJournal({
+      companyId,
+      date,
+      referenceType: 'INVENTORY_ADJUSTMENT',
+      referenceId: ref,
+      description: notes || `Inventory adjustment for ${current.newModelName}`,
+      lines: delta > 0
+        ? [{ code: '1300', debit: value }, { code: '4200', credit: value }]
+        : [{ code: '5200', debit: value }, { code: '1300', credit: value }]
+    });
+  }
+  await Item.updateOne({ _id: current._id }, { $inc: { quantityOnHand: delta } });
+  return InventoryTransaction.create({
+    companyId,
+    itemId: current._id,
+    type: 'ADJUSTMENT',
+    quantity: delta,
+    unitCost,
+    referenceType: 'INVENTORY_ADJUSTMENT',
+    referenceId: ref,
+    notes,
+    transactionDate: date
+  });
+}
+
 async function postSalesInvoice({ companyId, invoice, lines }) {
   const alreadyPosted = await JournalEntry.findOne({ companyId, referenceType: 'SALES_INVOICE', referenceId: String(invoice._id), status: { $ne: 'REVERSED' } });
   if (alreadyPosted) return alreadyPosted;
-
   const subtotal = roundMoney(lines.reduce((sum, line) => sum + Number(line.lineSubtotal || 0), 0));
   const tax = roundMoney(lines.reduce((sum, line) => sum + Number(line.taxAmount || 0), 0));
   const total = roundMoney(subtotal + tax);
@@ -118,8 +176,8 @@ async function postSalesInvoice({ companyId, invoice, lines }) {
     for (const line of lines) {
       const item = line.item;
       const quantity = Number(line.quantity || 0);
-      const unitCost = Number(item.unitCost || 0);
       const currentItem = await Item.findOne({ _id: item._id, companyId: String(companyId), isArchived: { $ne: true } });
+      const unitCost = Number(currentItem?.unitCost || 0);
       if (!currentItem || Number(currentItem.quantityOnHand || 0) < quantity) throw new Error(`Insufficient stock for ${item.newModelName}`);
       await Item.updateOne({ _id: item._id, companyId: String(companyId) }, { $inc: { quantityOnHand: -quantity } });
       const tx = await InventoryTransaction.create({
@@ -204,18 +262,62 @@ async function reverseSalesInvoice({ companyId, invoice }) {
 }
 
 async function postVendorBill({ companyId, bill }) {
-  return postJournal({
+  if (bill.billType !== 'INVENTORY') {
+    return postJournal({
+      companyId,
+      date: bill.date,
+      referenceType: 'VENDOR_BILL',
+      referenceId: bill._id,
+      description: `Vendor bill ${bill.number}`,
+      lines: [
+        { code: '5100', debit: bill.subtotal },
+        { code: '2200', debit: bill.taxAmount },
+        { code: '2000', credit: bill.totalAmount }
+      ]
+    });
+  }
+
+  const item = await Item.findOne({ _id: bill.inventoryItemId, companyId: String(companyId), isArchived: { $ne: true } });
+  if (!item) throw new Error('Inventory item for vendor bill not found');
+  const quantity = Number(bill.quantity || 0);
+  const purchaseCost = Number(bill.unitCost || 0);
+  if (!(quantity > 0) || !(purchaseCost >= 0)) throw new Error('Inventory purchase requires positive quantity and valid unit cost');
+  const journal = await postJournal({
     companyId,
     date: bill.date,
     referenceType: 'VENDOR_BILL',
     referenceId: bill._id,
-    description: `Vendor bill ${bill.number}`,
+    description: `Inventory vendor bill ${bill.number}`,
     lines: [
-      { code: '5100', debit: bill.subtotal },
+      { code: '1300', debit: bill.subtotal },
       { code: '2200', debit: bill.taxAmount },
       { code: '2000', credit: bill.totalAmount }
     ]
   });
+  try {
+    const oldQty = Number(item.quantityOnHand || 0);
+    const oldCost = Number(item.unitCost || 0);
+    const newQty = oldQty + quantity;
+    const weightedCost = newQty > 0 ? roundMoney(((oldQty * oldCost) + (quantity * purchaseCost)) / newQty) : purchaseCost;
+    item.quantityOnHand = newQty;
+    item.unitCost = weightedCost;
+    await item.save();
+    await InventoryTransaction.create({
+      companyId,
+      itemId: item._id,
+      type: 'PURCHASE',
+      quantity,
+      unitCost: purchaseCost,
+      referenceType: 'VENDOR_BILL',
+      referenceId: String(bill._id),
+      notes: bill.description,
+      transactionDate: bill.date
+    });
+    return journal;
+  } catch (error) {
+    await JournalEntry.deleteOne({ _id: journal._id });
+    throw error;
+  }
 }
 
 async function postVendorPayment({ companyId, bill, amount, mode, reference }) {
@@ -229,6 +331,21 @@ async function postVendorPayment({ companyId, bill, amount, mode, reference }) {
     lines: [
       { code: '2000', debit: amount },
       { code: cashCode, credit: amount }
+    ]
+  });
+}
+
+async function postCustomerReceipt({ companyId, invoice, payment }) {
+  const cashCode = payment.mode === 'CASH' ? '1000' : '1100';
+  return postJournal({
+    companyId,
+    date: payment.date,
+    referenceType: 'CUSTOMER_RECEIPT',
+    referenceId: payment._id,
+    description: `Receipt for invoice ${invoice.number}${payment.reference ? ` (${payment.reference})` : ''}`,
+    lines: [
+      { code: cashCode, debit: payment.amount },
+      { code: '1200', credit: payment.amount }
     ]
   });
 }
@@ -294,11 +411,14 @@ module.exports = {
   ensureDefaultAccounts,
   assertOpenPeriod,
   postJournal,
+  postManualJournal,
   postOpeningInventory,
+  postInventoryAdjustment,
   postSalesInvoice,
   reverseSalesInvoice,
   postVendorBill,
   postVendorPayment,
+  postCustomerReceipt,
   generalLedger,
   trialBalance,
   financialStatements
