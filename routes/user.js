@@ -15,9 +15,14 @@ router.post('/register', sameOriginOnly, async (req, res, next) => {
     }
 
     const user = await User.create({ username, email, password });
-    req.session.userId = user._id.toString();
-    req.session.username = user.username;
-    return res.redirect('/home');
+    return req.session.regenerate((sessionError) => {
+      if (sessionError) return next(sessionError);
+      req.session.userId = user._id.toString();
+      req.session.username = user.username;
+      req.session.companyName = '';
+      req.session.companyId = '';
+      return res.redirect('/home');
+    });
   } catch (error) {
     if (error && error.code === 11000) return res.status(409).send('An account with this email already exists');
     return next(error);
