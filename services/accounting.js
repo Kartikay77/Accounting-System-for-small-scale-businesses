@@ -3,7 +3,6 @@ const JournalEntry = require('../models/journalEntry');
 const AccountingPeriod = require('../models/accountingPeriod');
 const InventoryTransaction = require('../models/inventoryTransaction');
 const Item = require('../models/items/item');
-const InvoiceItem = require('../models/invoice/invoiceItem');
 const { roundMoney } = require('../utils/money');
 
 const DEFAULT_ACCOUNTS = [
@@ -34,6 +33,7 @@ async function ensureDefaultAccounts(companyId) {
 
 async function assertOpenPeriod(companyId, date) {
   const day = new Date(date);
+  if (Number.isNaN(day.getTime())) throw new Error('Invalid accounting date');
   const closed = await AccountingPeriod.findOne({
     companyId,
     status: 'CLOSED',
@@ -45,7 +45,8 @@ async function assertOpenPeriod(companyId, date) {
 
 async function postJournal({ companyId, date, referenceType, referenceId, description, lines }) {
   await assertOpenPeriod(companyId, date);
-  const existing = await JournalEntry.findOne({ companyId, referenceType, referenceId, status: { $ne: 'REVERSED' } });
+  const ref = String(referenceId);
+  const existing = await JournalEntry.findOne({ companyId, referenceType, referenceId: ref, status: { $ne: 'REVERSED' } });
   if (existing) return existing;
   const accounts = await ensureDefaultAccounts(companyId);
   const mapped = lines
@@ -56,10 +57,45 @@ async function postJournal({ companyId, date, referenceType, referenceId, descri
       credit: roundMoney(line.credit || 0)
     }))
     .filter((line) => line.accountId && (line.debit || line.credit));
-  return JournalEntry.create({ companyId, date, referenceType, referenceId: String(referenceId), description, status: 'POSTED', lines: mapped });
+  if (mapped.length < 2) throw new Error('A journal entry requires at least two non-zero lines');
+  return JournalEntry.create({ companyId, date, referenceType, referenceId: ref, description, status: 'POSTED', lines: mapped });
+}
+
+async function postOpeningInventory({ companyId, item }) {
+  const quantity = Number(item.quantityOnHand || 0);
+  const unitCost = Number(item.unitCost || 0);
+  const value = roundMoney(quantity * unitCost);
+  if (!(quantity > 0) || !(value > 0)) return null;
+  const existing = await InventoryTransaction.findOne({ companyId, itemId: item._id, type: 'OPENING_BALANCE', referenceType: 'ITEM_OPENING' });
+  if (existing) return existing;
+  await postJournal({
+    companyId,
+    date: item.createdAt || new Date(),
+    referenceType: 'ITEM_OPENING',
+    referenceId: item._id,
+    description: `Opening inventory for ${item.newModelName}`,
+    lines: [
+      { code: '1300', debit: value },
+      { code: '3000', credit: value }
+    ]
+  });
+  return InventoryTransaction.create({
+    companyId,
+    itemId: item._id,
+    type: 'OPENING_BALANCE',
+    quantity,
+    unitCost,
+    referenceType: 'ITEM_OPENING',
+    referenceId: String(item._id),
+    notes: 'Opening inventory capitalization',
+    transactionDate: item.createdAt || new Date()
+  });
 }
 
 async function postSalesInvoice({ companyId, invoice, lines }) {
+  const alreadyPosted = await JournalEntry.findOne({ companyId, referenceType: 'SALES_INVOICE', referenceId: String(invoice._id), status: { $ne: 'REVERSED' } });
+  if (alreadyPosted) return alreadyPosted;
+
   const subtotal = roundMoney(lines.reduce((sum, line) => sum + Number(line.lineSubtotal || 0), 0));
   const tax = roundMoney(lines.reduce((sum, line) => sum + Number(line.taxAmount || 0), 0));
   const total = roundMoney(subtotal + tax);
@@ -83,7 +119,8 @@ async function postSalesInvoice({ companyId, invoice, lines }) {
       const item = line.item;
       const quantity = Number(line.quantity || 0);
       const unitCost = Number(item.unitCost || 0);
-      if (Number(item.quantityOnHand || 0) < quantity) throw new Error(`Insufficient stock for ${item.newModelName}`);
+      const currentItem = await Item.findOne({ _id: item._id, companyId: String(companyId), isArchived: { $ne: true } });
+      if (!currentItem || Number(currentItem.quantityOnHand || 0) < quantity) throw new Error(`Insufficient stock for ${item.newModelName}`);
       await Item.updateOne({ _id: item._id, companyId: String(companyId) }, { $inc: { quantityOnHand: -quantity } });
       const tx = await InventoryTransaction.create({
         companyId,
@@ -123,26 +160,32 @@ async function postSalesInvoice({ companyId, invoice, lines }) {
 }
 
 async function reverseSalesInvoice({ companyId, invoice }) {
-  const originalEntries = await JournalEntry.find({ companyId, referenceId: String(invoice._id), status: 'POSTED' });
+  await assertOpenPeriod(companyId, new Date());
+  const originalEntries = await JournalEntry.find({ companyId, referenceId: String(invoice._id), status: 'POSTED', referenceType: { $in: ['SALES_INVOICE', 'COGS'] } });
   for (const original of originalEntries) {
-    await JournalEntry.create({
-      companyId,
-      date: new Date(),
-      referenceType: 'REVERSAL',
-      referenceId: String(original._id),
-      description: `Reversal of ${original.description || invoice.number}`,
-      status: 'POSTED',
-      lines: original.lines.map((line) => ({
-        accountId: line.accountId,
-        description: `Reversal: ${line.description || ''}`,
-        debit: line.credit,
-        credit: line.debit
-      }))
-    });
+    const existingReversal = await JournalEntry.findOne({ companyId, referenceType: 'REVERSAL', referenceId: String(original._id) });
+    if (!existingReversal) {
+      await JournalEntry.create({
+        companyId,
+        date: new Date(),
+        referenceType: 'REVERSAL',
+        referenceId: String(original._id),
+        description: `Reversal of ${original.description || invoice.number}`,
+        status: 'POSTED',
+        lines: original.lines.map((line) => ({
+          accountId: line.accountId,
+          description: `Reversal: ${line.description || ''}`,
+          debit: line.credit,
+          credit: line.debit
+        }))
+      });
+    }
     original.status = 'REVERSED';
     await original.save();
   }
 
+  const alreadyRestored = await InventoryTransaction.exists({ companyId, referenceType: 'INVOICE_VOID', referenceId: String(invoice._id) });
+  if (alreadyRestored) return;
   const saleTransactions = await InventoryTransaction.find({ companyId, referenceType: 'SALES_INVOICE', referenceId: String(invoice._id) });
   for (const tx of saleTransactions) {
     const restore = Math.abs(Number(tx.quantity || 0));
@@ -214,8 +257,9 @@ async function generalLedger(companyId, from, to) {
   return rows;
 }
 
-async function trialBalance(companyId, from, to) {
+async function trialBalance(companyId, from, to, options = {}) {
   const query = { companyId, status: 'POSTED' };
+  if (options.excludeClosing) query.referenceType = { $ne: 'PERIOD_CLOSE' };
   if (from || to) query.date = {};
   if (from) query.date.$gte = new Date(from);
   if (to) query.date.$lte = new Date(`${to}T23:59:59.999Z`);
@@ -232,7 +276,7 @@ async function trialBalance(companyId, from, to) {
 }
 
 async function financialStatements(companyId, from, to) {
-  const tb = await trialBalance(companyId, from, to);
+  const tb = await trialBalance(companyId, from, to, { excludeClosing: true });
   const balanceFor = (row) => ['ASSET', 'EXPENSE'].includes(row.type) ? roundMoney(row.debit - row.credit) : roundMoney(row.credit - row.debit);
   const revenue = tb.filter((r) => r.type === 'REVENUE').map((r) => ({ ...r, balance: balanceFor(r) }));
   const expenses = tb.filter((r) => r.type === 'EXPENSE').map((r) => ({ ...r, balance: balanceFor(r) }));
@@ -250,6 +294,7 @@ module.exports = {
   ensureDefaultAccounts,
   assertOpenPeriod,
   postJournal,
+  postOpeningInventory,
   postSalesInvoice,
   reverseSalesInvoice,
   postVendorBill,
