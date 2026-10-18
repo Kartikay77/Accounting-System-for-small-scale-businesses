@@ -1,29 +1,28 @@
 # Easy Accounting — Small Business Accounting System
 
-A runnable full-stack modernization of the original 2020 CSE3002 project using **Node.js, Express, Handlebars and MongoDB**.
+A runnable modernization of the original 2020 CSE3002 project using **Node.js, Express, Handlebars, React and MongoDB**.
 
-The repository retains the original academic report (`18BCE2199_IWP_PROJECT.pdf`), screenshots, AJAX coursework, and React salary coursework for historical reference. The main application now implements the documented business workflows in one integrated server application.
+The repository retains the original academic report (`18BCE2199_IWP_PROJECT.pdf`), screenshots, AJAX coursework and React coursework, while also making the report's core workflows demonstrable in the current application.
 
-## Original-report functionality covered
+## What is runnable now
 
 - Landing page
 - Login and registration with validation and bcrypt password hashing
-- MongoDB-backed user data and sessions
+- MongoDB-backed users and sessions
 - Create, list, select, edit and archive companies
 - Sales party/customer management
 - Inventory/item management with price, GST and quantity-on-hand
-- Invoice creation using company, party and item data from MongoDB
-- Multiple invoice line items
-- Serial numbers per invoice line
+- Invoice creation from company, party and item data in MongoDB
+- Multiple invoice line items and serial numbers
 - Server-authoritative subtotal, GST and grand-total calculation
 - Invoice list and printable invoice
-- AJAX refresh of company and invoice lists from MongoDB without a page reload
-- Salary management with employee add/edit/archive and daily/monthly/yearly views
+- **Live AJAX refresh** of company and invoice lists from MongoDB without a full page reload
+- Server-rendered salary management with add/edit/archive and daily/monthly/yearly views
+- **Live React salary-management module** using JSON APIs backed by the same Express session and MongoDB data
 - Dashboard counts
 - Historical screenshots served from `media/`
-- Local/offline-capable runtime after dependencies and Docker images are installed; no CDN assets are required by the main UI
 
-## Fastest way to run
+## Fastest way to run everything
 
 Prerequisite: Docker Desktop / Docker Engine with Compose.
 
@@ -35,7 +34,7 @@ docker compose up --build
 
 Open **http://localhost:3000**.
 
-Compose starts MongoDB, waits for database health, seeds demonstration data, and starts the application.
+Compose starts MongoDB, waits for database health, builds the React salary module into the Express static assets, seeds demonstration data, and starts the application.
 
 ### Demo account
 
@@ -44,19 +43,60 @@ Compose starts MongoDB, waits for database health, seeds demonstration data, and
 
 Seed data includes a company, customer, inventory item, serial-numbered invoice and salary entry.
 
+## Demonstrate AJAX
+
+After login and company selection:
+
+1. Open **Companies** and click **Refresh via AJAX**.
+2. Open browser DevTools → Network and verify the JSON request to `/company/getcompanyforlist`.
+3. Open **Invoices** and click **Refresh via AJAX**.
+4. Verify the JSON request to `/invoice/getinvoiceforlist`.
+
+The table updates without a complete page reload. The original standalone XMLHttpRequest coursework remains in `AJAX/` for historical reference.
+
+## Demonstrate React
+
+After login and company selection, open:
+
+**http://localhost:3000/react-salary/**
+
+or click **React Salary Module** in the sidebar.
+
+The module is an actual React application. It:
+
+- fetches payroll records from `/salary/api`
+- creates salary records with React form state
+- edits records through `PUT /salary/api/:id`
+- archives records through `DELETE /salary/api/:id`
+- calculates daily, monthly and yearly payroll views in the React UI
+- persists everything in the same MongoDB `payrollentries` collection used by the main application
+
+This recreates the salary-management behavior described in the original React section of the project report while keeping it connected to the modernized backend.
+
 ## Run without Docker
 
-1. Install Node.js 20+ and MongoDB 8.0 (or a compatible supported MongoDB version).
+1. Install Node.js 20+ and MongoDB 8.0 (or a compatible supported version).
 2. Copy `.env.example` to `.env`.
 3. Run:
 
 ```bash
 npm install
+npm run build:react
 npm run seed
 npm start
 ```
 
 Default local MongoDB URI: `mongodb://127.0.0.1:27017/accounting_system`.
+
+For React-only development, keep the Express app running on port 3000 and run:
+
+```bash
+cd REACT
+npm install
+npm run dev
+```
+
+The Vite development server runs on port 3001 and proxies the salary API to the Express application.
 
 ## Environment variables
 
@@ -77,7 +117,7 @@ npm test
 npm run lint
 ```
 
-CI launches MongoDB and executes the authenticated workflow: register → company → AJAX company fetch → party → item → serial-numbered invoice → AJAX invoice fetch → invoice list/print → salary management.
+CI also installs and builds the React salary module. The Mongo-backed integration workflow covers register → company → AJAX company fetch → party → item → serial-numbered invoice → AJAX invoice fetch → invoice list/print → salary management → React salary JSON API read/edit/archive.
 
 ## Main structure
 
@@ -90,22 +130,30 @@ models/
   payrollEntry.js
 routes/
   salary.js
-scripts/seed.js
+scripts/
+  seed.js
+  build-react.js
 public/
   css/app.css
-  js/app.js
   js/ajax-lists.js
   js/invoice-form.js
+  react-salary/        # generated React production build
+REACT/
+  package.json
+  vite.config.js
+  src/App.jsx
+  src/main.jsx
+  src/react-salary.css
+AJAX/
 views/
-  salary/
 test/
 Dockerfile
 docker-compose.yml
 ```
 
-## About the historical `AJAX/` and `REACT/` folders
+## Historical coursework
 
-They are preserved because they are part of the original coursework/report. They are **not required to run the main application**. The report's AJAX behavior and salary-management functionality have been integrated into the main app instead, so a fresh clone no longer depends on those old standalone demos.
+`AJAX/` still contains the original XMLHttpRequest + JSON exercise and screenshots. `REACT/` retains the historical source files and screenshots, but it now also contains the modern runnable React salary entry point used by the current project.
 
 ## Accounting scope
 
