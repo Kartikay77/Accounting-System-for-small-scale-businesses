@@ -11,6 +11,7 @@ const { rateLimit } = require('express-rate-limit');
 require('./config/mongoose');
 
 const Company = require('./models/company');
+const accounting = require('./routes/accounting');
 const company = require('./routes/company');
 const mainRouter = require('./routes/index');
 const invoice = require('./routes/invoice');
@@ -79,6 +80,7 @@ const authLimiter = rateLimit({
   legacyHeaders: false
 });
 
+app.use('/accounting', accounting);
 app.use('/company', company);
 app.use('/invoice', invoice);
 app.use('/item', item);

@@ -9,6 +9,7 @@ const ItemSchema = new mongoose.Schema({
   itemType: { type: String, trim: true },
   tax: { type: Number, min: 0, max: 100, default: 0 },
   price: { type: Number, min: 0, default: 0 },
+  unitCost: { type: Number, min: 0, default: 0 },
   quantityOnHand: { type: Number, min: 0, default: 0 },
   reorderLevel: { type: Number, min: 0, default: 0 },
   companyId: { type: String, required: true, index: true },
