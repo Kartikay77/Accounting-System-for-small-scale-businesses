@@ -9,6 +9,7 @@ const PaymentSchema = new mongoose.Schema({
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
   partyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Party', required: true, index: true },
   vendorBillId: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorBill', index: true },
+  journalEntryId: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', index: true },
   type: { type: String, enum: ['CUSTOMER_RECEIPT', 'VENDOR_PAYMENT'], default: 'CUSTOMER_RECEIPT', index: true },
   date: { type: Date, required: true, default: Date.now },
   amount: { type: Number, required: true, min: 0.01 },
