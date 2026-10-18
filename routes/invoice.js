@@ -9,6 +9,7 @@ const auth = require('../middleware/auth');
 const { sameOriginOnly } = require('../middleware/security');
 const { calculateLine, calculateInvoice, parseInvoiceDate, gstType, roundMoney } = require('../utils/money');
 const { rupeesToWords } = require('../utils/indianNumberWords');
+const { postSalesInvoice, reverseSalesInvoice } = require('../services/accounting');
 
 const router = express.Router();
 router.use(auth.isAuthorized, auth.requireCompany);
@@ -59,8 +60,10 @@ router.post('/new', sameOriginOnly, async (req, res, next) => {
       const item = await Item.getByName(itemName, req.session.companyId);
       if (!item) throw new Error(`Item not found: ${itemName}`);
       const calculated = calculateLine({ quantity: req.body[`quantity_${row}`], ratePer: req.body[`rate_per_${row}`], taxRate: item.tax });
+      if (Number(item.quantityOnHand || 0) < calculated.quantity) throw new Error(`Insufficient stock for ${item.newModelName}`);
       lines.push({ row, item, serials: serialsForRow(req.body, row), ...calculated });
     }
+    if (!lines.length) return res.status(400).send('Add at least one invoice line');
 
     const totals = calculateInvoice(lines);
     invoice = await Invoice.create({
@@ -84,6 +87,8 @@ router.post('/new', sameOriginOnly, async (req, res, next) => {
         await SerialNumber.insertMany(line.serials.map((serialNumber) => ({ invoiceItemId: invoiceItem._id.toString(), serialNumber })));
       }
     }
+
+    await postSalesInvoice({ companyId: req.company._id, invoice, lines });
     return res.redirect('/invoice/list');
   } catch (error) {
     if (invoice) {
@@ -94,6 +99,8 @@ router.post('/new', sameOriginOnly, async (req, res, next) => {
       await Invoice.deleteOne({ _id: invoice._id });
     }
     if (error?.code === 11000) return res.status(409).send('Invoice number or serial number already exists');
+    if (String(error?.message || '').startsWith('Insufficient stock')) return res.status(409).send(error.message);
+    if (String(error?.message || '').includes('is closed')) return res.status(409).send(error.message);
     return next(error);
   }
 });
@@ -131,11 +138,12 @@ router.get('/getinvoiceforlist', async (req, res, next) => {
 
 router.post('/delete/:id', sameOriginOnly, async (req, res, next) => {
   try {
-    const invoice = await Invoice.findOneAndUpdate(
-      { _id: req.params.id, companyId: String(req.session.companyId), isArchived: { $ne: true } },
-      { status: 'VOID', isArchived: true }, { new: true }
-    );
+    const invoice = await Invoice.findOne({ _id: req.params.id, companyId: String(req.session.companyId), isArchived: { $ne: true } });
     if (!invoice) return res.status(404).send('Invoice not found');
+    await reverseSalesInvoice({ companyId: req.company._id, invoice });
+    invoice.status = 'VOID';
+    invoice.isArchived = true;
+    await invoice.save();
     return res.redirect('/invoice/list');
   } catch (error) { return next(error); }
 });
