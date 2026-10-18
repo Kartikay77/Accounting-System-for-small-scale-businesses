@@ -8,7 +8,7 @@ const { sameOriginOnly } = require('../middleware/security');
 const router = express.Router();
 router.use(auth.isAuthorized, auth.requireCompany);
 
-const allowedFields = ['companyName','newModelName','hsn','itemType','tax','price','quantityOnHand','reorderLevel'];
+const allowedFields = ['companyName','newModelName','hsn','itemType','tax','price','unitCost','quantityOnHand','reorderLevel'];
 function normalize(body) {
   const data = Object.fromEntries(allowedFields.filter((key) => Object.hasOwn(body, key)).map((key) => [key, body[key]]));
   if (body.newCompanyName) data.companyName = body.newCompanyName;
