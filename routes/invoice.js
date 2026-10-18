@@ -14,8 +14,16 @@ const router = express.Router();
 router.use(auth.isAuthorized, auth.requireCompany);
 
 function serialsForRow(body, row) {
-  const expression = new RegExp(`^serial_${row}_`);
-  return Object.entries(body).filter(([key]) => expression.test(key)).map(([, value]) => String(value || '').trim()).filter(Boolean);
+  const legacyExpression = new RegExp(`^serial_${row}_`);
+  const legacy = Object.entries(body)
+    .filter(([key]) => legacyExpression.test(key))
+    .map(([, value]) => String(value || '').trim())
+    .filter(Boolean);
+  const compact = String(body[`serials_${row}`] || '')
+    .split(/[\n,]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set([...legacy, ...compact])];
 }
 
 async function resolveParty(value, companyId) {
@@ -85,7 +93,7 @@ router.post('/new', sameOriginOnly, async (req, res, next) => {
       await InvoiceItem.deleteMany({ invoiceId: invoice._id.toString() });
       await Invoice.deleteOne({ _id: invoice._id });
     }
-    if (error?.code === 11000) return res.status(409).send('Invoice number already exists for this company');
+    if (error?.code === 11000) return res.status(409).send('Invoice number or serial number already exists');
     return next(error);
   }
 });
@@ -112,7 +120,7 @@ async function buildInvoiceRows(companyId) {
 router.get('/list', async (req, res, next) => {
   try {
     const invoiceRows = await buildInvoiceRows(req.session.companyId);
-    return res.render('invoice/list', { title: 'Invoices', invoice_list: true, invoiceRows });
+    return res.render('invoice/list', { title: 'Invoices', ajax_list_page: true, invoiceRows });
   } catch (error) { return next(error); }
 });
 
@@ -146,7 +154,10 @@ router.get('/print/:id', async (req, res, next) => {
     let subtotal = 0;
     let taxTotal = 0;
     for (const invoiceItem of invoiceItems) {
-      const item = await Item.findOne({ _id: invoiceItem.itemId, companyId: String(req.session.companyId) }).lean();
+      const [item, serialDocs] = await Promise.all([
+        Item.findOne({ _id: invoiceItem.itemId, companyId: String(req.session.companyId) }).lean(),
+        SerialNumber.find({ invoiceItemId: String(invoiceItem._id) }).lean()
+      ]);
       if (!item) continue;
       const fallback = calculateLine({ quantity: invoiceItem.quantity, ratePer: invoiceItem.ratePer, taxRate: item.tax });
       const lineSubtotal = invoiceItem.lineSubtotal || fallback.lineSubtotal;
@@ -157,7 +168,8 @@ router.get('/print/:id', async (req, res, next) => {
         name: item.newModelName, hsn: item.hsn, quantity: invoiceItem.quantity,
         ratePer: Number(invoiceItem.ratePer).toFixed(2), taxRate: invoiceItem.taxRate || item.tax,
         subtotal: Number(lineSubtotal).toFixed(2), taxAmount: Number(taxAmount).toFixed(2),
-        total: Number(lineSubtotal + taxAmount).toFixed(2)
+        total: Number(lineSubtotal + taxAmount).toFixed(2),
+        serials: serialDocs.map((doc) => doc.serialNumber).join(', ')
       });
     }
     const total = roundMoney(subtotal + taxTotal);

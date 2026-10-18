@@ -36,7 +36,7 @@ router.post('/login', sameOriginOnly, async (req, res) => {
       req.session.companyId = '';
       return res.redirect('/home');
     });
-  } catch (error) {
+  } catch {
     return res.status(401).render('pages/login', { title: 'Login', loginForm: 'Invalid email or password' });
   }
 });

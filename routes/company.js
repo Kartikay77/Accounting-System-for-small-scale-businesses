@@ -16,7 +16,7 @@ router.get('/new', (req, res) => res.render('company/new', { newcompany: true, t
 router.get('/list', async (req, res, next) => {
   try {
     const companies = await Company.findByUserId(req.session.userId).lean();
-    return res.render('company/list', { company_page: true, title: 'Companies', companies });
+    return res.render('company/list', { company_page: true, ajax_list_page: true, title: 'Companies', companies });
   } catch (error) { return next(error); }
 });
 

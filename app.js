@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
 const express = require('express');
 const path = require('path');
@@ -16,6 +16,7 @@ const mainRouter = require('./routes/index');
 const invoice = require('./routes/invoice');
 const item = require('./routes/item');
 const party = require('./routes/party');
+const salary = require('./routes/salary');
 const user = require('./routes/user');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
@@ -51,14 +52,10 @@ if (process.env.NODE_ENV !== 'test') {
 }
 app.use(session(sessionOptions));
 
-const publicDirectoryPath = path.join(__dirname, 'public');
-const viewsPath = path.join(__dirname, 'views');
-const partialsPath = path.join(__dirname, 'views', 'partials');
-
-app.set('views', viewsPath);
+app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'hbs');
-hbs.registerPartials(partialsPath);
-app.use(express.static(publicDirectoryPath));
+hbs.registerPartials(path.join(__dirname, 'views', 'partials'));
+app.use(express.static(path.join(__dirname, 'public')));
 app.use('/media', express.static(path.join(__dirname, 'media')));
 
 app.use(async (req, res, next) => {
@@ -86,6 +83,7 @@ app.use('/company', company);
 app.use('/invoice', invoice);
 app.use('/item', item);
 app.use('/party', party);
+app.use('/salary', salary);
 app.use('/user', authLimiter, user);
 app.use('/', mainRouter);
 

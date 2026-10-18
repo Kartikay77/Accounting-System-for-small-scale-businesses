@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const mongoose = require('mongoose');
 require('../config/mongoose');
 const User = require('../models/user');
@@ -7,6 +7,8 @@ const Party = require('../models/party');
 const Item = require('../models/items/item');
 const Invoice = require('../models/invoice/invoice');
 const InvoiceItem = require('../models/invoice/invoiceItem');
+const SerialNumber = require('../models/invoice/serialNumber');
+const PayrollEntry = require('../models/payrollEntry');
 
 async function seed() {
   await mongoose.connection.asPromise();
@@ -21,8 +23,11 @@ async function seed() {
   let invoice = await Invoice.findOne({ companyId: String(company._id), number: 'DEMO-001' });
   if (!invoice) {
     invoice = await Invoice.create({ partyId: String(party._id), date: new Date(), number: 'DEMO-001', totalAmount: 59000, narration: 'Seeded demonstration invoice', companyId: String(company._id), status: 'ISSUED' });
-    await InvoiceItem.create({ itemId: String(item._id), ratePer: 50000, invoiceId: String(invoice._id), quantity: 1, taxRate: 18, lineSubtotal: 50000, taxAmount: 9000, lineTotal: 59000 });
+    const line = await InvoiceItem.create({ itemId: String(item._id), ratePer: 50000, invoiceId: String(invoice._id), quantity: 1, taxRate: 18, lineSubtotal: 50000, taxAmount: 9000, lineTotal: 59000 });
+    await SerialNumber.create({ invoiceItemId: String(line._id), serialNumber: 'DEMO-SN-001' });
   }
+  const salary = await PayrollEntry.findOne({ companyId: String(company._id), employeeName: 'Demo Employee', isArchived: { $ne: true } });
+  if (!salary) await PayrollEntry.create({ companyId: String(company._id), employeeName: 'Demo Employee', monthlySalary: 60000 });
   console.log('Demo data ready: demo@easyaccounting.local / DemoPass123!');
 }
 seed().then(()=>mongoose.disconnect()).catch(async(error)=>{console.error(error);await mongoose.disconnect();process.exitCode=1;});
