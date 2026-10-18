@@ -7,7 +7,10 @@ const PayrollEntrySchema = new mongoose.Schema({
   isArchived: { type: Boolean, default: false, index: true }
 }, { timestamps: true });
 
-PayrollEntrySchema.index({ companyId: 1, employeeName: 1 }, { unique: true });
+PayrollEntrySchema.index(
+  { companyId: 1, employeeName: 1 },
+  { unique: true, partialFilterExpression: { isArchived: false } }
+);
 
 PayrollEntrySchema.statics.findByCompanyId = function findByCompanyId(companyId) {
   return this.find({ companyId: String(companyId), isArchived: { $ne: true } }).sort({ employeeName: 1 });

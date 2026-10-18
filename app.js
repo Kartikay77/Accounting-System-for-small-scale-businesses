@@ -29,8 +29,20 @@ if (process.env.NODE_ENV === 'production' && sessionSecret === 'development-only
   throw new Error('SESSION_SECRET must be configured in production');
 }
 
-app.set('trust proxy', 1);
-app.use(helmet({ contentSecurityPolicy: false }));
+if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],
+      fontSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"]
+    }
+  }
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
@@ -73,6 +85,12 @@ app.use(async (req, res, next) => {
   }
 });
 
+const appLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 600,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false
+});
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 40,
@@ -80,6 +98,7 @@ const authLimiter = rateLimit({
   legacyHeaders: false
 });
 
+app.use(appLimiter);
 app.use('/accounting', accounting);
 app.use('/company', company);
 app.use('/invoice', invoice);

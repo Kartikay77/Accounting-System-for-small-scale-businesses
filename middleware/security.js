@@ -1,23 +1,31 @@
+function sameHost(urlValue, req) {
+  try {
+    const parsed = new URL(urlValue);
+    return parsed.host === req.get('host');
+  } catch {
+    return false;
+  }
+}
+
 function sameOriginOnly(req, res, next) {
   const origin = req.get('origin');
-  if (!origin) return next();
+  const referer = req.get('referer');
 
-  // Safari and some local-development navigations may send `Origin: null`.
-  // Allow that only outside production so local Docker testing works without
-  // weakening the production same-origin policy.
-  if (origin === 'null' && process.env.NODE_ENV !== 'production') {
-    return next();
+  if (origin === 'null' && process.env.NODE_ENV !== 'production') return next();
+  if (origin) {
+    return sameHost(origin, req)
+      ? next()
+      : res.status(403).send('Cross-site request rejected');
+  }
+  if (referer) {
+    return sameHost(referer, req)
+      ? next()
+      : res.status(403).send('Cross-site request rejected');
   }
 
-  try {
-    const originUrl = new URL(origin);
-    if (originUrl.host !== req.get('host')) {
-      return res.status(403).send('Cross-site request rejected');
-    }
-    return next();
-  } catch {
-    return res.status(403).send('Invalid request origin');
-  }
+  // Automated tests do not have a browser to supply Origin/Referer headers.
+  if (process.env.NODE_ENV === 'test') return next();
+  return res.status(403).send('Missing request origin');
 }
 
 module.exports = { sameOriginOnly };

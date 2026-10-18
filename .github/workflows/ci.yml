@@ -5,6 +5,9 @@ on:
     branches: [main, 'chatgpt/**']
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -32,6 +35,18 @@ jobs:
         run: npm install
       - name: Build React salary module
         run: npm run build:react
+      - name: Commit generated lockfiles on hardening branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/chatgpt/harden-accounting-system'
+        shell: bash
+        run: |
+          if git diff --quiet -- package-lock.json REACT/package-lock.json && git ls-files --error-unmatch package-lock.json REACT/package-lock.json >/dev/null 2>&1; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json REACT/package-lock.json
+          git commit -m 'Commit reproducible npm lockfiles [skip ci]'
+          git push origin HEAD:chatgpt/harden-accounting-system
       - name: Run tests
         shell: bash
         run: |

@@ -30,21 +30,37 @@ function calculateInvoice(lines) {
   }), { subtotal: 0, taxAmount: 0, totalAmount: 0 });
 }
 
+function utcDate(year, month, day) {
+  const value = new Date(Date.UTC(year, month - 1, day));
+  if (
+    value.getUTCFullYear() !== year ||
+    value.getUTCMonth() !== month - 1 ||
+    value.getUTCDate() !== day
+  ) {
+    throw new Error('Invalid invoice date');
+  }
+  return value;
+}
+
 function parseInvoiceDate(value) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return utcDate(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
+  }
+
   const raw = String(value || '').trim();
-  const match = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
-  const parsed = match
-    ? new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]))
-    : new Date(raw);
-  if (Number.isNaN(parsed.getTime())) throw new Error('Invalid invoice date');
-  return parsed;
+  let match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return utcDate(Number(match[1]), Number(match[2]), Number(match[3]));
+
+  match = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (match) return utcDate(Number(match[3]), Number(match[2]), Number(match[1]));
+
+  throw new Error('Invalid invoice date');
 }
 
 function gstType(companyGstin, partyGstin) {
-  const companyState = String(companyGstin || '').slice(0, 2);
-  const partyState = String(partyGstin || '').slice(0, 2);
-  if (!companyState || !partyState) return 'gst';
+  const companyState = String(companyGstin || '').trim().slice(0, 2);
+  const partyState = String(partyGstin || '').trim().slice(0, 2);
+  if (!/^\d{2}$/.test(companyState) || !/^\d{2}$/.test(partyState)) return 'unknown';
   return companyState === partyState ? 'gst' : 'igst';
 }
 
