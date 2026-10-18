@@ -30,7 +30,7 @@ describeIntegration('core application workflow', () => {
     if (mongoose?.connection.readyState !== 0) await mongoose.disconnect();
   });
 
-  test('register, company, party, item, invoice, AJAX and salary workflow', async () => {
+  test('register, company, party, item, invoice, AJAX and React salary API workflow', async () => {
     const request = require('supertest');
     const agent = request.agent(app);
 
@@ -63,8 +63,22 @@ describeIntegration('core application workflow', () => {
     await agent.get(`/invoice/print/${invoice._id}`).expect(200);
 
     await agent.post('/salary/new').type('form').send({ employeeName: 'Test Employee', monthlySalary: 60000 }).expect(302);
-    const payroll = await PayrollEntry.findOne({ companyId: String(company._id), employeeName: 'Test Employee' });
+    let payroll = await PayrollEntry.findOne({ companyId: String(company._id), employeeName: 'Test Employee' });
     expect(payroll.monthlySalary).toBe(60000);
     await agent.get('/salary/list').expect(200);
+
+    const salaryApi = await agent.get('/salary/api').expect(200);
+    expect(salaryApi.body.companyName).toBe('Integration Co');
+    expect(salaryApi.body.data).toHaveLength(1);
+    expect(salaryApi.body.totals.monthly).toBe(60000);
+    expect(salaryApi.body.totals.yearly).toBe(720000);
+
+    await agent.put(`/salary/api/${payroll._id}`).send({ employeeName: 'Test Employee', monthlySalary: 65000 }).expect(200);
+    payroll = await PayrollEntry.findById(payroll._id);
+    expect(payroll.monthlySalary).toBe(65000);
+
+    await agent.delete(`/salary/api/${payroll._id}`).expect(200);
+    payroll = await PayrollEntry.findById(payroll._id);
+    expect(payroll.isArchived).toBe(true);
   });
 });

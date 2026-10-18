@@ -5,7 +5,7 @@ const path = require('path');
 const hbs = require('hbs');
 const helmet = require('helmet');
 const session = require('express-session');
-const MongoStore = require('connect-mongo');
+const { MongoStore } = require('connect-mongo');
 const mongoose = require('mongoose');
 const { rateLimit } = require('express-rate-limit');
 require('./config/mongoose');

@@ -1,14 +1,15 @@
 {
   "name": "small-business-accounting-system",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "private": true,
-  "description": "Runnable small-business invoicing and accounting demo built with Node.js, Express, Handlebars and MongoDB.",
+  "description": "Runnable small-business invoicing and accounting demo built with Node.js, Express, Handlebars, React and MongoDB.",
   "main": "app.js",
   "engines": { "node": ">=20" },
   "scripts": {
     "start": "node ./bin/www",
     "dev": "nodemon ./bin/www",
     "seed": "node ./scripts/seed.js",
+    "build:react": "node ./scripts/build-react.js",
     "test": "jest --runInBand",
     "test:integration": "RUN_INTEGRATION=1 jest test/app.integration.test.js --runInBand",
     "lint": "eslint .",
