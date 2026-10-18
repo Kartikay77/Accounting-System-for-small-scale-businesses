@@ -1,5 +1,6 @@
 const express = require('express');
 const auth = require('../middleware/auth');
+const { sameOriginOnly } = require('../middleware/security');
 const Party = require('../models/party');
 const Invoice = require('../models/invoice/invoice');
 const Item = require('../models/items/item');
@@ -24,7 +25,7 @@ router.get('/home', auth.isAuthorized, async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
-router.get('/logout', auth.isAuthorized, (req, res, next) => {
+router.post('/logout', auth.isAuthorized, sameOriginOnly, (req, res, next) => {
   req.session.destroy((error) => {
     if (error) return next(error);
     res.clearCookie('accounting.sid');
