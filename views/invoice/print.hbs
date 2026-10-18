@@ -1,1 +1,94 @@
-{{> static}}<body><main class="invoice-paper"><div class="invoice-print-actions"><button class="btn" onclick="window.print()">Print</button><a class="btn btn-outline" href="/invoice/list">Back</a></div><header class="invoice-head"><div><span class="eyebrow">Tax invoice</span><h1>{{company.name}}</h1><p>{{company.address}} · {{company.city}}, {{company.state}} {{company.pincode}}</p><p>GSTIN: {{company.gstin}}</p></div><div class="invoice-meta"><strong>{{invoice.number}}</strong><span>{{displayDate}}</span><span>Status: {{invoice.status}}</span></div></header><section class="bill-to"><strong>Bill to</strong><h2>{{party.name}}</h2><p>{{party.address}}, {{party.city}}, {{party.state}} {{party.pincode}}</p><p>GSTIN: {{party.gstin}}</p></section><table><thead><tr><th>Item</th><th>HSN</th><th>Qty</th><th>Rate</th><th>Tax %</th><th>Taxable</th><th>Tax</th><th>Total</th><th>Serials</th></tr></thead><tbody>{{#each rows}}<tr><td>{{this.name}}</td><td>{{this.hsn}}</td><td>{{this.quantity}}</td><td>₹{{this.ratePer}}</td><td>{{this.taxRate}}</td><td>₹{{this.subtotal}}</td><td>₹{{this.taxAmount}}</td><td>₹{{this.total}}</td><td>{{this.serials}}</td></tr>{{/each}}</tbody></table><div class="invoice-totals"><div><span>Taxable</span><strong>₹{{subtotal}}</strong></div><div><span>{{taxType}}</span><strong>₹{{taxTotal}}</strong></div><div class="grand"><span>Total</span><strong>₹{{total}}</strong></div></div><p class="amount-words"><strong>Amount in words:</strong> {{totalWords}}</p>{{#if invoice.narration}}<p><strong>Narration:</strong> {{invoice.narration}}</p>{{/if}}</main></body></html>
+{{> static}}
+
+<body>
+  <main class="invoice-paper">
+    <div class="invoice-print-actions">
+      <button class="btn" id="print-invoice-button" type="button">Print</button>
+      <a class="btn btn-outline" href="/invoice/list">Back</a>
+    </div>
+
+    <header class="invoice-head">
+      <div>
+        <span class="eyebrow">Tax invoice</span>
+        <h1>{{company.name}}</h1>
+        <p>{{company.address}} · {{company.city}}, {{company.state}} {{company.pincode}}</p>
+        <p>GSTIN: {{company.gstin}}</p>
+      </div>
+
+      <div class="invoice-meta">
+        <strong>{{invoice.number}}</strong>
+        <span>{{displayDate}}</span>
+        <span>Status: {{invoice.status}}</span>
+      </div>
+    </header>
+
+    <section class="bill-to">
+      <strong>Bill to</strong>
+      <h2>{{party.name}}</h2>
+      <p>{{party.address}}, {{party.city}}, {{party.state}} {{party.pincode}}</p>
+      <p>GSTIN: {{party.gstin}}</p>
+    </section>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>HSN</th>
+          <th>Qty</th>
+          <th>Rate</th>
+          <th>Tax %</th>
+          <th>Taxable</th>
+          <th>Tax</th>
+          <th>Total</th>
+          <th>Serials</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {{#each rows}}
+          <tr>
+            <td>{{this.name}}</td>
+            <td>{{this.hsn}}</td>
+            <td>{{this.quantity}}</td>
+            <td>₹{{this.ratePer}}</td>
+            <td>{{this.taxRate}}</td>
+            <td>₹{{this.subtotal}}</td>
+            <td>₹{{this.taxAmount}}</td>
+            <td>₹{{this.total}}</td>
+            <td>{{this.serials}}</td>
+          </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <div class="invoice-totals">
+      <div>
+        <span>Taxable</span>
+        <strong>₹{{subtotal}}</strong>
+      </div>
+
+      <div>
+        <span>{{taxType}}</span>
+        <strong>₹{{taxTotal}}</strong>
+      </div>
+
+      <div class="grand">
+        <span>Total</span>
+        <strong>₹{{total}}</strong>
+      </div>
+    </div>
+
+    <p class="amount-words">
+      <strong>Amount in words:</strong> {{totalWords}}
+    </p>
+
+    {{#if invoice.narration}}
+      <p>
+        <strong>Narration:</strong> {{invoice.narration}}
+      </p>
+    {{/if}}
+  </main>
+
+  <script src="/js/invoice-print.js"></script>
+</body>
+</html>

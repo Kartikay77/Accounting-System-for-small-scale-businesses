@@ -21,9 +21,9 @@ const { calculateLine, calculateInvoice, parseInvoiceDate, gstType } = require('
 
   test('parses Indian-style invoice dates', () => {
     const date = parseInvoiceDate('17-10-2026');
-    expect(date.getFullYear()).toBe(2026);
-    expect(date.getMonth()).toBe(9);
-    expect(date.getDate()).toBe(17);
+    expect(date.getUTCFullYear()).toBe(2026);
+    expect(date.getUTCMonth()).toBe(9);
+    expect(date.getUTCDate()).toBe(17);
   });
 
   test('selects intra-state GST versus inter-state IGST', () => {
