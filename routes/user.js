@@ -1,49 +1,44 @@
 const express = require('express');
+const User = require('../models/user');
+const { sameOriginOnly } = require('../middleware/security');
+
 const router = express.Router();
-const User = require('../models/user')
 
-
-router.post('/register', async (req, res) => {
-    console.log(req.body)
-    const user = new User(req.body)
-    
-    try {
-        await user.save()
-		//res.status(201).send(user)
-		req.session.userId = user._id;
-		req.session.username = user.username;
-	    return res.redirect('../login')
-    } catch (e) {
-        res.status(400).send(e)
+router.post('/register', sameOriginOnly, async (req, res, next) => {
+  try {
+    const { username, email, password } = req.body;
+    if (!username || !email || !password) {
+      return res.status(400).send('Username, email and password are required');
     }
-})
+    if (String(password).length < 8) {
+      return res.status(400).send('Password must be at least 8 characters');
+    }
 
+    const user = await User.create({ username, email, password });
+    req.session.userId = user._id.toString();
+    req.session.username = user.username;
+    return res.redirect('/home');
+  } catch (error) {
+    if (error && error.code === 11000) return res.status(409).send('An account with this email already exists');
+    return next(error);
+  }
+});
 
-router.post('/login', async function(req, res, next) {
-	
-	try{
-		console.log(req.body.email,req.body.password)
-		const user = await User.authenticate(req.body.email,req.body.password)
+router.post('/login', sameOriginOnly, async (req, res) => {
+  try {
+    const user = await User.authenticate(req.body.email, req.body.password);
 
-		req.session.userId = user._id;
-		req.session.username = user.username;
-		req.session.companyName = '';
-		req.session.companyId = '';
-		//req.body['userid'] = "test"
-		console.log(req.body)
-		//console.log(user)
-		
-		return res.redirect('/home')
-		
-	}
-	catch(e)
-	{
-		const data = {loginForm: "try afain"}
-		// console.log(data)
-		// return res.redirect('/login')
-		res.redirect(500, '/login')
-		
-	}
+    return req.session.regenerate((sessionError) => {
+      if (sessionError) return res.status(500).send('Unable to start session');
+      req.session.userId = user._id.toString();
+      req.session.username = user.username;
+      req.session.companyName = '';
+      req.session.companyId = '';
+      return res.redirect('/home');
+    });
+  } catch (error) {
+    return res.status(401).render('pages/login', { title: 'Login', loginForm: 'Invalid email or password' });
+  }
 });
 
 module.exports = router;

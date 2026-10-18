@@ -1,157 +1,94 @@
 const express = require('express');
+const Item = require('../models/items/item');
+const ItemCompany = require('../models/items/itemCompany');
+const ItemType = require('../models/items/itemType');
+const auth = require('../middleware/auth');
+const { sameOriginOnly } = require('../middleware/security');
+
 const router = express.Router();
-const Item = require('../models/items/item')
-const ItemCompany = require('../models/items/itemCompany')
-const ItemType = require('../models/items/itemType')
-const auth = require('../middleware/auth')
+router.use(auth.isAuthorized, auth.requireCompany);
 
+router.get('/edit', (req, res) => res.render('item/edit', { title: 'Edit Item', userName: req.session.username, companyName: req.session.companyName }));
+router.get('/list', (req, res) => res.render('item/list', { title: 'List Item', userName: req.session.username, companyName: req.session.companyName, item_page: true }));
 
-router.get('/edit', auth.isAuthorized, function(req, res, next) {
-    res.render('item/edit', {title: "Edit Item", userName: req.session.username, companyName:req.session.companyName});
+router.get('/new', async (req, res, next) => {
+  try {
+    const [itemCompanies, itemTypes] = await Promise.all([
+      ItemCompany.findByCompanyId(req.session.companyId),
+      ItemType.findByCompanyId(req.session.companyId)
+    ]);
+    return res.render('item/new', { title: 'New Item', userName: req.session.username, companyName: req.session.companyName, new_item_page: true, itemCompanies, itemTypes });
+  } catch (error) {
+    return next(error);
+  }
 });
 
-router.get('/list', auth.isAuthorized, function(req, res, next) {
-    res.render('item/list', {title: "List Item", userName: req.session.username, companyName:req.session.companyName, item_page:true});
-});
-  
-router.get('/new', auth.isAuthorized, async (req, res) => {
-    console.log(req.session.companyId)
-    if(req.session.companyId == null || req.session.companyId == '')
-    {
-        res.send("Please select Company")
-    }
-    const itemCompanies = await ItemCompany.findByCompanyId(req.session.companyId) 
-    const itemTypes = await ItemType.findByCompanyId(req.session.companyId)
-    console.log(itemCompanies,itemTypes)
-    res.render('item/new', {title: "New Item", userName: req.session.username, companyName:req.session.companyName, 
-                            new_item_page:true, itemCompanies:itemCompanies, itemTypes:itemTypes});
+router.post('/new', sameOriginOnly, async (req, res, next) => {
+  try {
+    const data = { ...req.body, companyId: String(req.session.companyId) };
+    if (data.newCompanyName) data.companyName = data.newCompanyName;
+    if (data.newItemType) data.itemType = data.newItemType;
+    delete data.newCompanyName;
+    delete data.newItemType;
+    await Item.create(data);
+    return res.redirect('/item/list');
+  } catch (error) {
+    return next(error);
+  }
 });
 
-router.post('/new', auth.isAuthorized, async (req, res) => {
-    //console.log(req.body)
-    req.body['companyId'] = req.session.companyId
+router.get('/getitemforlist', async (req, res, next) => {
+  try {
+    const items = await Item.findByCompanyId(req.session.companyId);
+    const data = items.map((item) => ({
+      newModelName: item.newModelName,
+      companyName: item.companyName,
+      hsn: item.hsn,
+      itemType: item.itemType,
+      tax: item.tax,
+      price: item.price,
+      actions: `<td><div class="dropdown-content"><a href="/item/edit/${item._id}" class="dropdown-item">Edit</a><form method="POST" action="/item/delete/${item._id}" style="display:inline"><button type="submit" class="dropdown-item">Delete</button></form></div></td>`
+    }));
+    return res.send({ data });
+  } catch (error) {
+    return next(error);
+  }
+});
 
-    //console.log(req.body)
-    res.render('item/new')
+router.get('/edit/:id', async (req, res, next) => {
+  try {
+    const [item, itemCompanies, itemTypes] = await Promise.all([
+      Item.findOne({ _id: req.params.id, companyId: String(req.session.companyId), isArchived: { $ne: true } }),
+      ItemCompany.findByCompanyId(req.session.companyId),
+      ItemType.findByCompanyId(req.session.companyId)
+    ]);
+    if (!item) return res.status(404).send('Item not found');
+    return res.render('item/edit', { title: 'Edit Item', userName: req.session.username, companyName: req.session.companyName, new_item_page: true, itemCompanies, itemTypes, item });
+  } catch (error) {
+    return next(error);
+  }
+});
 
-    if(req.body.newCompanyName!='' && req.body.newCompanyName!=undefined)
-    {
-        req.body['companyName'] = req.body.newCompanyName
-        delete req.body.newCompanyName
-    }
-    if(req.body.newItemType!='' && req.body.newItemType!=undefined)
-    {
-        req.body['itemType'] = req.body.newItemType
-        delete req.body.newItemType
-    }
-    //console.log(req.body)
-    const item = new Item(req.body)
-    
-    try {
-        item.save()
-		//res.status(201).send(user)
-	    return res.redirect('/items/list')
-    } catch (e) {
-        res.status(400).send(e)
-    }
-    // if(req.session.companyId == null || req.session.companyId == '')
-    // {
-    //     res.send("Please select Company")
-    // }
-    // const item = new Item(req.body)
-    
-    // try {
-    //     await item.save()
-	// 	//res.status(201).send(user)
-	//     return res.redirect('/home')
-    // } catch (e) {
-    //     res.status(400).send(e)
-    // }
-    res.send("ok")
-})
+router.post('/edit/:id', sameOriginOnly, async (req, res, next) => {
+  try {
+    const allowed = ['companyName','newModelName','hsn','itemType','tax','price','quantityOnHand','reorderLevel'];
+    const update = Object.fromEntries(allowed.filter((key) => Object.hasOwn(req.body, key)).map((key) => [key, req.body[key]]));
+    const item = await Item.findOneAndUpdate({ _id: req.params.id, companyId: String(req.session.companyId), isArchived: { $ne: true } }, update, { runValidators: true, new: true });
+    if (!item) return res.status(404).send('Item not found');
+    return res.redirect('/item/list');
+  } catch (error) {
+    return next(error);
+  }
+});
 
-
-router.get('/getitemforlist',async (req,res) =>{
-    console.log(req.session.companyId)
-    if(req.session.companyId == null || req.session.companyId == '')
-    {
-        res.send("Please select Company")
-    }
-    try{
-        const items = await Item.findByCompanyId(req.session.companyId)
-        items1 = []
-        items.forEach(function(item){
-            console.log(typeof item)
-            //item = JSON.stringify(item)
-            x = "<td><div class=\"dropdown-content\"><a id=\"navbarDropdownMenuLink"+item._id+"\" href=\"#\" data-toggle=\"dropdown\" aria-haspopup=\"true\" aria-expanded=\"false\" class=\"nav-link tasks-toggle\"><i class=\"icon-new-file\"></i></a><div aria-labelledby=\"navbarDropdownMenuLink"+item._id+"\" class=\"item_datatable dropdown-menu tasks-list\"><a href=\"/item/edit/"+item._id+"\" class=\"dropdown-item\"><div class=\"text d-flex justify-content-between\"><strong><i class=\"fa fa-pencil fa-fw\"></i>  Edit</strong></div></a><a data-href=\"/item/delete/"+item._id+"\" data-toggle=\"modal\" data-target=\"#confirm-delete\" class=\"dropdown-item\"><div class=\"text d-flex justify-content-between\"><strong><i class=\"fa fa-trash-o fa-fw\"></i>  Delete</strong></div></a></div></div></td>"
-            //console.log(x)
-            //item["actions"] = x
-
-            items1.push({
-                "newModelName" : item.newModelName,
-                "companyName" : item.companyName,
-                "hsn" : item.hsn,
-                "itemType" : item.itemType,
-                "tax" : item.tax,
-                "price" : item.price,
-                "actions" : x
-            })
-            //console.log(item)
-        })
-        console.log({data: items1})//,json(items))
-        res.send({data: items1})
-
-    }
-    catch(e)
-    {
-        console.log(e)
-    }
-})
-
-
-router.get('/edit/:id', async (req,res) =>{
-    var _id = req.params.id
-    try{
-        const item = await Item.findById(_id)
-        console.log(item)
-        const itemCompanies = await ItemCompany.findByCompanyId(req.session.companyId) 
-        const itemTypes = await ItemType.findByCompanyId(req.session.companyId)
-        console.log(itemCompanies,itemTypes)
-        res.render('item/edit', {title: "New Item", userName: req.session.username, companyName:req.session.companyName, 
-                            new_item_page:true, itemCompanies:itemCompanies, itemTypes:itemTypes, item:item});
-
-       // res.render("item/edit",{title: "Edit Item", userName: req.session.username, companyName:req.session.companyName, item:item});
-    }
-    catch(e){
-        console.log(e)
-    }
-})
-
-router.post('/edit/:id', async (req,res) =>{
-    var _id = req.params.id
-    try{
-        const data = await Item.updateitem(_id,req.body)
-        //console.log(data,req.body)
-    }
-    catch(e){
-        console.log(e)
-    }
-    res.redirect('/item/list')
-})
-
-router.get('/delete/:id', async (req,res) =>{
-    try{
-        console.log(req.params.id)
-        const data = await Item.deleteitem(req.params.id)
-        //console.log(data,req.body)
-    }
-    catch(e){
-        console.log(e)
-    }
-    res.redirect('/item/list')
-})
-
-
-
+router.post('/delete/:id', sameOriginOnly, async (req, res, next) => {
+  try {
+    const item = await Item.findOneAndUpdate({ _id: req.params.id, companyId: String(req.session.companyId) }, { isArchived: true }, { new: true });
+    if (!item) return res.status(404).send('Item not found');
+    return res.redirect('/item/list');
+  } catch (error) {
+    return next(error);
+  }
+});
 
 module.exports = router;
