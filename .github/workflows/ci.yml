@@ -32,7 +32,18 @@ jobs:
         run: npm install
       - name: Build React salary module
         run: npm run build:react
-      - run: npm test
+      - name: Run tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee jest-output.log
+      - name: Upload Jest failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-failure-log
+          path: jest-output.log
+          retention-days: 3
       - run: npm run lint
       - name: Smoke-test real application startup and React bundle
         shell: bash
