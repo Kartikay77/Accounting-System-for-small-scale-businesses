@@ -1,6 +1,16 @@
 module.exports = [
   {
-    ignores: ['node_modules/**', 'REACT/**', 'AJAX/**', 'public/**'],
+    ignores: [
+      '**/node_modules/**',
+      'REACT/**',
+      'AJAX/**',
+      'public/**',
+      'media/**',
+      'views/**'
+    ]
+  },
+  {
+    files: ['**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'commonjs',
