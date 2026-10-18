@@ -8,7 +8,7 @@ function sameOriginOnly(req, res, next) {
       return res.status(403).send('Cross-site request rejected');
     }
     return next();
-  } catch (error) {
+  } catch {
     return res.status(403).send('Invalid request origin');
   }
 }

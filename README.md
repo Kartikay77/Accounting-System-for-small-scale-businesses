@@ -1,149 +1,124 @@
-# Small Business Accounting System
+# Easy Accounting — Small Business Accounting System
 
-A full-stack Node.js application for small-business company management, customers/parties, item masters, GST-aware invoicing, serial-number tracking and invoice printing. The repository began as an academic Internet & Web Programming project and is now being modernized into a safer, testable accounting/ERP foundation.
+A runnable full-stack modernization of the original 2020 CSE3002 project using **Node.js, Express, Handlebars and MongoDB**.
 
-## Current stack
+The repository retains the original academic report (`18BCE2199_IWP_PROJECT.pdf`), screenshots, AJAX coursework, and React salary coursework for historical reference. The main application now implements the documented business workflows in one integrated server application.
 
-- Node.js 20+
-- Express 5
-- MongoDB + Mongoose
-- Handlebars (`hbs`)
-- Session authentication backed by MongoDB
-- Jest for unit tests
-- ESLint + Prettier
-- Docker / Docker Compose
-- GitHub Actions CI
+## Original-report functionality covered
 
-## Implemented application features
+- Landing page
+- Login and registration with validation and bcrypt password hashing
+- MongoDB-backed user data and sessions
+- Create, list, select, edit and archive companies
+- Sales party/customer management
+- Inventory/item management with price, GST and quantity-on-hand
+- Invoice creation using company, party and item data from MongoDB
+- Multiple invoice line items
+- Serial numbers per invoice line
+- Server-authoritative subtotal, GST and grand-total calculation
+- Invoice list and printable invoice
+- AJAX refresh of company and invoice lists from MongoDB without a page reload
+- Salary management with employee add/edit/archive and daily/monthly/yearly views
+- Dashboard counts
+- Historical screenshots served from `media/`
+- Local/offline-capable runtime after dependencies and Docker images are installed; no CDN assets are required by the main UI
 
-- User registration, login and logout
-- Multi-company records per user
-- Company-scoped access controls
-- Customer / sales-party master data
-- Item master data, HSN, GST rate, price, stock/reorder fields
-- Invoice creation with **server-side subtotal and tax calculation**
-- Company-scoped invoice numbers
-- GST/IGST-aware invoice printing
-- Serial-number records on invoice lines
-- Soft deletion / voiding for business records instead of destructive GET requests
-- Health endpoint at `GET /health`
+## Fastest way to run
 
-## Accounting-domain foundation
-
-The modernization also introduces schemas for functionality that can be expanded without redesigning the database again:
-
-- Chart of Accounts (`Account`)
-- Balanced journal entries (`JournalEntry`)
-- Payments and invoice allocations (`Payment`)
-- Inventory movement ledger (`InventoryTransaction`)
-- Company memberships and roles (`CompanyMembership`)
-- Audit history (`AuditLog`)
-
-> The current UI does not yet expose every accounting-domain model. They are the foundation for the next product layer: posting invoices/payments to the ledger, A/R aging, inventory valuation, trial balance, P&L and balance sheet.
-
-## Security improvements
-
-The current backend includes:
-
-- Password hashing with bcrypt
-- No plaintext password logging
-- Session regeneration at login
-- Mongo-backed sessions with HTTP-only/SameSite cookies
-- Environment-based session secret and MongoDB connection
-- Helmet security headers
-- Authentication rate limiting
-- Same-origin protection on state-changing HTML form requests
-- Authorization checks that scope companies, customers, items and invoices to the logged-in account/company
-- Soft-delete/archive behavior for master data and invoices
-- Centralized 404 and error handling
-
-## Local setup
-
-1. Install Node.js 20+ and MongoDB, or use Docker.
-2. Copy the environment template:
+Prerequisite: Docker Desktop / Docker Engine with Compose.
 
 ```bash
-cp .env.example .env
-```
-
-3. Change `SESSION_SECRET` to a long random value.
-4. Install dependencies:
-
-```bash
-npm install
-```
-
-5. Start the application:
-
-```bash
-npm run dev
-```
-
-6. Open `http://localhost:3000`.
-
-### Docker
-
-```bash
+git clone https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses.git
+cd Accounting-System-for-small-scale-businesses
 docker compose up --build
 ```
 
+Open **http://localhost:3000**.
+
+Compose starts MongoDB, waits for database health, seeds demonstration data, and starts the application.
+
+### Demo account
+
+- Email: `demo@easyaccounting.local`
+- Password: `DemoPass123!`
+
+Seed data includes a company, customer, inventory item, serial-numbered invoice and salary entry.
+
+## Run without Docker
+
+1. Install Node.js 20+ and MongoDB 8.0 (or a compatible supported MongoDB version).
+2. Copy `.env.example` to `.env`.
+3. Run:
+
+```bash
+npm install
+npm run seed
+npm start
+```
+
+Default local MongoDB URI: `mongodb://127.0.0.1:27017/accounting_system`.
+
 ## Environment variables
 
-| Variable | Purpose | Example |
-| --- | --- | --- |
-| `NODE_ENV` | Runtime environment | `development` |
-| `PORT` | HTTP port | `3000` |
-| `MONGODB_URI` | MongoDB connection string | `mongodb://127.0.0.1:27017/accounting_system` |
-| `SESSION_SECRET` | Session signing secret | Use a long random value |
+```dotenv
+NODE_ENV=development
+PORT=3000
+MONGODB_URI=mongodb://127.0.0.1:27017/accounting_system
+SESSION_SECRET=replace-with-a-long-random-secret
+COOKIE_SECURE=false
+```
 
-## Quality checks
+Use `COOKIE_SECURE=true` only behind HTTPS in production.
+
+## Validation
 
 ```bash
 npm test
 npm run lint
 ```
 
-CI runs the same checks on pushes and pull requests.
+CI launches MongoDB and executes the authenticated workflow: register → company → AJAX company fetch → party → item → serial-numbered invoice → AJAX invoice fetch → invoice list/print → salary management.
 
-## Project structure
+## Main structure
 
 ```text
-config/                 MongoDB configuration
-middleware/             Authentication, security and error handling
-models/                 Application and accounting-domain models
-routes/                 Express route handlers
-test/                   Unit tests
-utils/                  Money, GST and number-formatting utilities
-views/                   Handlebars UI
-public/                  Static assets
-AJAX/                    Preserved historical coursework/demo
-REACT/                   Preserved historical React coursework/demo
+app.js
+bin/www
+config/
+middleware/
+models/
+  payrollEntry.js
+routes/
+  salary.js
+scripts/seed.js
+public/
+  css/app.css
+  js/app.js
+  js/ajax-lists.js
+  js/invoice-form.js
+views/
+  salary/
+test/
+Dockerfile
+docker-compose.yml
 ```
 
-## Important accounting behavior
+## About the historical `AJAX/` and `REACT/` folders
 
-Invoice totals are recalculated on the server from quantity, rate and the stored item tax rate. The browser-provided total is not trusted. Invoice numbers are unique inside each company, and invoice/customer/item lookups are company-scoped.
+They are preserved because they are part of the original coursework/report. They are **not required to run the main application**. The report's AJAX behavior and salary-management functionality have been integrated into the main app instead, so a fresh clone no longer depends on those old standalone demos.
 
-The `JournalEntry` schema enforces the core double-entry invariant that total debits equal total credits. Automatic ledger posting is intentionally not claimed as complete until account mapping and posting rules are wired into the invoice/payment flows.
+## Accounting scope
 
-## Roadmap
+This is a functional small-business invoicing, master-data, inventory-summary and salary-management application. It is **not** a complete commercial ERP/general-ledger product. Models for accounts, journals, payments, audit logs and inventory transactions provide a foundation, but automatic double-entry posting, bank reconciliation, accounts payable, Trial Balance, P&L and Balance Sheet remain future accounting modules.
 
-- Post sales invoices and payments automatically into the general ledger
-- Add accounts receivable and payment allocation screens
-- Add inventory movement posting and valuation
-- Add credit/debit notes and returns
-- Add GST tax summaries and period reports
-- Add Trial Balance, Profit & Loss and Balance Sheet
-- Add role-based UI permissions using `CompanyMembership`
-- Add immutable audit entries for financial changes
-- Add integration tests with an isolated MongoDB database
+## Security basics
 
-## Historical project report
-
-The original academic report and screenshots remain in the repository for provenance and comparison with the modernized application.
-
-## Author
-
-**Kartikay Gupta**
-
-GitHub: `Kartikay77`
+- bcrypt password hashing
+- no plaintext password logging
+- environment-based secrets
+- HTTP-only session cookies
+- optional secure cookie for HTTPS deployments
+- authentication rate limiting
+- user/company ownership checks
+- archive/void behavior for business records
+- same-origin checks for state-changing browser requests

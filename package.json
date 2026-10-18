@@ -1,23 +1,21 @@
 {
   "name": "small-business-accounting-system",
-  "version": "2.0.0",
+  "version": "2.1.1",
   "private": true,
-  "description": "Small-business invoicing, inventory and accounting platform built with Node.js, Express, Handlebars and MongoDB.",
+  "description": "Runnable small-business invoicing and accounting demo built with Node.js, Express, Handlebars and MongoDB.",
   "main": "app.js",
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "scripts": {
     "start": "node ./bin/www",
     "dev": "nodemon ./bin/www",
+    "seed": "node ./scripts/seed.js",
     "test": "jest --runInBand",
+    "test:integration": "RUN_INTEGRATION=1 jest test/app.integration.test.js --runInBand",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "check": "npm test && npm run lint"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses.git"
-  },
+  "repository": { "type": "git", "url": "https://github.com/Kartikay77/Accounting-System-for-small-scale-businesses.git" },
   "author": "Kartikay Gupta",
   "license": "ISC",
   "dependencies": {
@@ -30,8 +28,7 @@
     "hbs": "^4.2.0",
     "helmet": "^8.3.0",
     "http-errors": "^2.0.0",
-    "mongodb": "^7.7.0",
-    "mongoose": "^9.10.3"
+    "mongoose": "8.24.5"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
