@@ -2,6 +2,10 @@ const express = require('express');
 const Account = require('../models/account');
 const JournalEntry = require('../models/journalEntry');
 const Party = require('../models/party');
+const Invoice = require('../models/invoice/invoice');
+const Payment = require('../models/payment');
+const Item = require('../models/items/item');
+const InventoryTransaction = require('../models/inventoryTransaction');
 const VendorBill = require('../models/vendorBill');
 const BankTransaction = require('../models/bankTransaction');
 const AccountingPeriod = require('../models/accountingPeriod');
@@ -10,8 +14,11 @@ const { sameOriginOnly } = require('../middleware/security');
 const { roundMoney } = require('../utils/money');
 const {
   ensureDefaultAccounts,
+  postManualJournal,
+  postInventoryAdjustment,
   postVendorBill,
   postVendorPayment,
+  postCustomerReceipt,
   generalLedger,
   trialBalance,
   financialStatements
@@ -27,15 +34,40 @@ function money(value) { return Number(value || 0).toFixed(2); }
 router.get('/', async (req, res, next) => {
   try {
     await ensureDefaultAccounts(companyId(req));
-    const [accounts, journals, openBills, unmatchedBank, closedPeriods] = await Promise.all([
+    const [accounts, journals, openBills, openInvoices, unmatchedBank, closedPeriods] = await Promise.all([
       Account.countDocuments({ companyId: companyId(req), isActive: true }),
       JournalEntry.countDocuments({ companyId: companyId(req), status: 'POSTED' }),
       VendorBill.countDocuments({ companyId: companyId(req), status: { $in: ['OPEN', 'PARTIALLY_PAID'] }, isArchived: { $ne: true } }),
+      Invoice.countDocuments({ companyId: String(req.session.companyId), status: { $in: ['ISSUED', 'PARTIALLY_PAID'] }, isArchived: { $ne: true } }),
       BankTransaction.countDocuments({ companyId: companyId(req), status: 'UNMATCHED' }),
       AccountingPeriod.countDocuments({ companyId: companyId(req), status: 'CLOSED' })
     ]);
-    return res.render('accounting/index', { title: 'Accounting', accounting_page: true, accounts, journals, openBills, unmatchedBank, closedPeriods });
+    return res.render('accounting/index', { title: 'Accounting', accounting_page: true, accounts, journals, openBills, openInvoices, unmatchedBank, closedPeriods });
   } catch (error) { return next(error); }
+});
+
+router.get('/journals', async (req, res, next) => {
+  try {
+    const accounts = await ensureDefaultAccounts(companyId(req));
+    const rows = await JournalEntry.find({ companyId: companyId(req) }).sort({ date: -1, createdAt: -1 }).limit(100).lean();
+    const accountMap = new Map(Object.values(accounts).map((a) => [String(a._id), `${a.code} · ${a.name}`]));
+    const journals = rows.map((entry) => ({
+      ...entry,
+      dateText: new Date(entry.date).toISOString().slice(0, 10),
+      lineText: entry.lines.map((line) => `${accountMap.get(String(line.accountId)) || 'Account'}: Dr ${money(line.debit)} / Cr ${money(line.credit)}`).join(' | ')
+    }));
+    return res.render('accounting/journals', { title: 'Journal Entries', accounting_page: true, accounts: Object.values(accounts), journals });
+  } catch (error) { return next(error); }
+});
+
+router.post('/journals/new', sameOriginOnly, async (req, res, next) => {
+  try {
+    await postManualJournal({ companyId: companyId(req), date: req.body.date, description: String(req.body.description || '').trim(), debitAccountId: req.body.debitAccountId, creditAccountId: req.body.creditAccountId, amount: req.body.amount });
+    return res.redirect('/accounting/journals');
+  } catch (error) {
+    if (String(error?.message || '').includes('closed')) return res.status(409).send(error.message);
+    return next(error);
+  }
 });
 
 router.get('/ledger', async (req, res, next) => {
@@ -76,11 +108,78 @@ router.get('/balance-sheet', async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
+router.get('/ar', async (req, res, next) => {
+  try {
+    const [invoices, parties, payments] = await Promise.all([
+      Invoice.find({ companyId: String(req.session.companyId), isArchived: { $ne: true }, status: { $ne: 'VOID' } }).sort({ date: -1 }).lean(),
+      Party.findByCompanyId(req.session.companyId).lean(),
+      Payment.find({ companyId: companyId(req), status: 'POSTED' }).sort({ date: -1 }).limit(50).lean()
+    ]);
+    const partyMap = new Map(parties.map((p) => [String(p._id), p.name]));
+    const rows = invoices.map((invoice) => ({
+      ...invoice,
+      partyName: partyMap.get(String(invoice.partyId)) || 'Unknown',
+      dateText: new Date(invoice.date).toISOString().slice(0, 10),
+      totalText: money(invoice.totalAmount),
+      paidText: money(invoice.amountPaid),
+      dueText: money(Math.max(0, Number(invoice.totalAmount || 0) - Number(invoice.amountPaid || 0)))
+    }));
+    const paymentRows = payments.map((p) => ({ ...p, dateText: new Date(p.date).toISOString().slice(0, 10), amountText: money(p.amount), partyName: partyMap.get(String(p.partyId)) || 'Unknown' }));
+    return res.render('accounting/ar', { title: 'Accounts Receivable', accounting_page: true, rows, paymentRows });
+  } catch (error) { return next(error); }
+});
+
+router.post('/ar/:id/receive', sameOriginOnly, async (req, res, next) => {
+  let payment;
+  try {
+    const invoice = await Invoice.findOne({ _id: req.params.id, companyId: String(req.session.companyId), isArchived: { $ne: true }, status: { $ne: 'VOID' } });
+    if (!invoice) return res.status(404).send('Invoice not found');
+    const due = roundMoney(Number(invoice.totalAmount || 0) - Number(invoice.amountPaid || 0));
+    const amount = roundMoney(Number(req.body.amount));
+    if (!(amount > 0) || amount > due) return res.status(400).send('Receipt must be positive and cannot exceed amount due');
+    payment = await Payment.create({ companyId: companyId(req), partyId: invoice.partyId, date: req.body.date || new Date(), amount, mode: req.body.mode || 'BANK_TRANSFER', reference: req.body.reference, allocations: [{ invoiceId: invoice._id, amount }], status: 'POSTED' });
+    await postCustomerReceipt({ companyId: companyId(req), invoice, payment });
+    invoice.amountPaid = roundMoney(Number(invoice.amountPaid || 0) + amount);
+    invoice.status = invoice.amountPaid >= invoice.totalAmount ? 'PAID' : 'PARTIALLY_PAID';
+    await invoice.save();
+    return res.redirect('/accounting/ar');
+  } catch (error) {
+    if (payment) await Payment.deleteOne({ _id: payment._id });
+    if (String(error?.message || '').includes('closed')) return res.status(409).send(error.message);
+    return next(error);
+  }
+});
+
+router.get('/inventory', async (req, res, next) => {
+  try {
+    const [items, transactions] = await Promise.all([
+      Item.findByCompanyId(req.session.companyId).lean(),
+      InventoryTransaction.find({ companyId: companyId(req) }).sort({ transactionDate: -1, createdAt: -1 }).limit(100).lean()
+    ]);
+    const itemMap = new Map(items.map((item) => [String(item._id), item.newModelName]));
+    const txRows = transactions.map((tx) => ({ ...tx, itemName: itemMap.get(String(tx.itemId)) || 'Unknown', dateText: new Date(tx.transactionDate).toISOString().slice(0, 10), unitCostText: money(tx.unitCost) }));
+    return res.render('accounting/inventory', { title: 'Inventory Accounting', accounting_page: true, items, txRows });
+  } catch (error) { return next(error); }
+});
+
+router.post('/inventory/adjust', sameOriginOnly, async (req, res, next) => {
+  try {
+    const item = await Item.findOne({ _id: req.body.itemId, companyId: String(req.session.companyId), isArchived: { $ne: true } });
+    if (!item) return res.status(404).send('Item not found');
+    await postInventoryAdjustment({ companyId: companyId(req), item, quantityDelta: req.body.quantityDelta, date: req.body.date || new Date(), notes: req.body.notes });
+    return res.redirect('/accounting/inventory');
+  } catch (error) {
+    if (String(error?.message || '').includes('closed')) return res.status(409).send(error.message);
+    return next(error);
+  }
+});
+
 router.get('/ap', async (req, res, next) => {
   try {
-    const [bills, parties] = await Promise.all([
+    const [bills, parties, items] = await Promise.all([
       VendorBill.find({ companyId: companyId(req), isArchived: { $ne: true } }).sort({ dueDate: 1 }).lean(),
-      Party.findByCompanyId(req.session.companyId).lean()
+      Party.findByCompanyId(req.session.companyId).lean(),
+      Item.findByCompanyId(req.session.companyId).lean()
     ]);
     const partyMap = new Map(parties.map((p) => [String(p._id), p.name]));
     const now = new Date();
@@ -89,7 +188,7 @@ router.get('/ap', async (req, res, next) => {
       const daysPastDue = due > 0 && new Date(bill.dueDate) < now ? Math.floor((now - new Date(bill.dueDate)) / 86400000) : 0;
       return { ...bill, vendorName: partyMap.get(String(bill.partyId)) || 'Unknown', dateText: new Date(bill.date).toISOString().slice(0, 10), dueDateText: new Date(bill.dueDate).toISOString().slice(0, 10), totalText: money(bill.totalAmount), paidText: money(bill.amountPaid), dueText: money(due), daysPastDue };
     });
-    return res.render('accounting/ap', { title: 'Accounts Payable', accounting_page: true, rows, parties });
+    return res.render('accounting/ap', { title: 'Accounts Payable', accounting_page: true, rows, parties, items });
   } catch (error) { return next(error); }
 });
 
@@ -98,15 +197,31 @@ router.post('/ap/new', sameOriginOnly, async (req, res, next) => {
   try {
     const party = await Party.findOne({ _id: req.body.partyId, companyid: String(req.session.companyId), isArchived: { $ne: true } });
     if (!party) return res.status(400).send('Select a valid vendor/party');
-    const subtotal = roundMoney(Number(req.body.subtotal));
+    const billType = req.body.billType === 'INVENTORY' ? 'INVENTORY' : 'EXPENSE';
+    let subtotal;
+    let inventoryItemId;
+    let quantity = 0;
+    let unitCost = 0;
+    if (billType === 'INVENTORY') {
+      const item = await Item.findOne({ _id: req.body.inventoryItemId, companyId: String(req.session.companyId), isArchived: { $ne: true } });
+      if (!item) return res.status(400).send('Select a valid inventory item');
+      quantity = Number(req.body.quantity);
+      unitCost = Number(req.body.unitCost);
+      if (!(quantity > 0) || !(unitCost >= 0)) return res.status(400).send('Enter valid inventory quantity and unit cost');
+      inventoryItemId = item._id;
+      subtotal = roundMoney(quantity * unitCost);
+    } else {
+      subtotal = roundMoney(Number(req.body.subtotal));
+    }
     const taxAmount = roundMoney(Number(req.body.taxAmount || 0));
     if (!(subtotal >= 0) || !(taxAmount >= 0) || subtotal + taxAmount <= 0) return res.status(400).send('Enter valid bill amounts');
-    bill = await VendorBill.create({ companyId: companyId(req), partyId: party._id, number: String(req.body.number || '').trim(), date: req.body.date, dueDate: req.body.dueDate, description: req.body.description, subtotal, taxAmount, totalAmount: roundMoney(subtotal + taxAmount) });
+    bill = await VendorBill.create({ companyId: companyId(req), partyId: party._id, number: String(req.body.number || '').trim(), date: req.body.date, dueDate: req.body.dueDate, description: req.body.description, billType, inventoryItemId, quantity, unitCost, subtotal, taxAmount, totalAmount: roundMoney(subtotal + taxAmount) });
     await postVendorBill({ companyId: companyId(req), bill });
     return res.redirect('/accounting/ap');
   } catch (error) {
     if (bill) await VendorBill.deleteOne({ _id: bill._id });
     if (error?.code === 11000) return res.status(409).send('Vendor bill number already exists');
+    if (String(error?.message || '').includes('closed')) return res.status(409).send(error.message);
     return next(error);
   }
 });
@@ -123,7 +238,10 @@ router.post('/ap/:id/pay', sameOriginOnly, async (req, res, next) => {
     bill.status = bill.amountPaid >= bill.totalAmount ? 'PAID' : 'PARTIALLY_PAID';
     await bill.save();
     return res.redirect('/accounting/ap');
-  } catch (error) { return next(error); }
+  } catch (error) {
+    if (String(error?.message || '').includes('closed')) return res.status(409).send(error.message);
+    return next(error);
+  }
 });
 
 router.get('/bank-reconciliation', async (req, res, next) => {
@@ -203,7 +321,7 @@ router.post('/periods/close', sameOriginOnly, async (req, res, next) => {
     }
     if (closingLines.length) {
       const accounts = await ensureDefaultAccounts(companyId(req));
-      closingLines.push({ accountId: accounts['3000']._id, debit: netIncome < 0 ? Math.abs(netIncome) : 0, credit: netIncome > 0 ? netIncome : 0, description: 'Current period earnings transferred to equity' });
+      if (netIncome !== 0) closingLines.push({ accountId: accounts['3000']._id, debit: netIncome < 0 ? Math.abs(netIncome) : 0, credit: netIncome > 0 ? netIncome : 0, description: 'Current period earnings transferred to equity' });
       await JournalEntry.create({ companyId: companyId(req), date: endDate, referenceType: 'PERIOD_CLOSE', referenceId: `${req.body.startDate}:${req.body.endDate}`, description: `Close ${req.body.name || req.body.endDate}`, status: 'POSTED', lines: closingLines });
     }
     await AccountingPeriod.create({ companyId: companyId(req), name: req.body.name || `${req.body.startDate} to ${req.body.endDate}`, startDate, endDate, status: 'CLOSED', closedAt: new Date(), closedBy: req.session.userId });
