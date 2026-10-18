@@ -11,7 +11,7 @@ const router = express.Router();
 router.use(auth.isAuthorized, auth.requireCompany);
 
 const createFields = ['companyName','newModelName','hsn','itemType','tax','price','unitCost','quantityOnHand','reorderLevel'];
-const editFields = ['companyName','newModelName','hsn','itemType','tax','price','unitCost','reorderLevel'];
+const editFields = ['companyName','newModelName','hsn','itemType','tax','price','reorderLevel'];
 function normalize(body, fields) {
   const data = Object.fromEntries(fields.filter((key) => Object.hasOwn(body, key)).map((key) => [key, body[key]]));
   if (body.newCompanyName) data.companyName = body.newCompanyName;
